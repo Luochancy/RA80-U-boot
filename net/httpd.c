@@ -684,13 +684,16 @@ static int do_initramfs_boot(const ulong size) {
 int do_http_progress(const int state) {
 	switch (state) {
 		case WEBFAILSAFE_PROGRESS_START:
-#if defined(CONFIG_IPQ807X_ALIYUN_AP8220)
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+			/* 0xa: Ethernet is active and Webfailsafe is genuinely ready. */
+			ra80_debug_led_code(0xa);
+#elif defined(CONFIG_IPQ807X_ALIYUN_AP8220)
 			led_on("power_led");
 #else
 			led_off("power_led");
-#endif
 			led_on("blink_led");
 			led_off("system_led");
+#endif
 			printf("HTTP server is ready!\nRun 'httpd s' to stop\n");
 			break;
 		case WEBFAILSAFE_PROGRESS_UPLOAD_READY:
