@@ -1,0 +1,77 @@
+name: Build RA80 read-only probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - xiaomi-ra80
+    paths:
+      - 'tools/ra80-kmod/**'
+      - '.github/workflows/build-ra80-probe.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download matching IPQ50xx QSDK 11.4 / GCC 5.5 SDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          URL='https://github.com/hzyitc/openwrt-redmi-ax3000/releases/download/ci-ipq50xx-qsdk-kernel-4.4-openwrt-21.02-qsdk-11.4.0.5.7418-20240727-173443-UTC/openwrt-sdk-ipq50xx-arm_gcc-5.5.0_musl_eabi.Linux-x86_64.tar.xz'
+          curl -fL --retry 5 --retry-delay 2 "$URL" -o /tmp/sdk.tar.xz
+          echo '9d76ebd0d3dd02c2a6568d0f429acbbba1175f21b9a37dbb1b6f0be144919df3  /tmp/sdk.tar.xz' | sha256sum -c -
+          mkdir -p /tmp/sdk
+          tar -xJf /tmp/sdk.tar.xz -C /tmp/sdk --strip-components=1
+
+      - name: Install probe package into SDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/sdk/package/ra80-probe/src
+          cp tools/ra80-kmod/OpenWrt.Makefile /tmp/sdk/package/ra80-probe/Makefile
+          cp tools/ra80-kmod/ra80_probe.c /tmp/sdk/package/ra80-probe/src/
+          cp tools/ra80-kmod/Kbuild /tmp/sdk/package/ra80-probe/src/Makefile
+
+      - name: Build module
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd /tmp/sdk
+          make defconfig
+          make package/ra80-probe/compile V=s -j2
+
+      - name: Collect and inspect artifact
+        shell: bash
+        run: |
+          set -euxo pipefail
+          KO="$(find /tmp/sdk/build_dir -type f -name ra80_probe.ko -print -quit)"
+          test -n "$KO"
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cp "$KO" "$GITHUB_WORKSPACE/out/ra80_probe.ko"
+          {
+            echo "Source commit: $GITHUB_SHA"
+            echo "SDK: QSDK 11.4.0.5.7418 / Linux 4.4 / GCC 5.5.0"
+            echo
+            file "$KO"
+            echo
+            sha256sum "$KO"
+            echo
+            readelf -h "$KO"
+            echo
+            readelf -S "$KO"
+            echo
+            readelf -sW "$KO" | grep -E 'kallsyms_lookup_name|ioremap|iounmap|init_module|cleanup_module' || true
+            echo
+            echo '--- module metadata strings ---'
+            strings "$KO" | grep -E '^(vermagic|depends|license|description|author|version)=' || true
+          } | tee "$GITHUB_WORKSPACE/out/inspection.txt"
+
+      - name: Upload probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: RA80-readonly-probe-ko
+          path: out/
+          if-no-files-found: error
