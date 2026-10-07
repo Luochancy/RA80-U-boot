@@ -142,6 +142,7 @@ void led_off(const char *gpio_name);
 void led_blink(const char *gpio_name, int duration);
 void led_init_by_name(const char *gpio_name);
 void led_init(void);
+void ra80_debug_led_code(unsigned int code);
 void btn_init_by_name(const char *gpio_name);
 void btn_init(void);
 void btn_check_press(void);

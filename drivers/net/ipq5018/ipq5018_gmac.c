@@ -21,6 +21,7 @@
 #include <asm/global_data.h>
 #include "ipq_phy.h"
 #include <asm/arch-ipq5018/ipq5018_gmac.h>
+#include <ipq_api.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -752,6 +753,10 @@ int ipq_gmac_init(ipq_gmac_board_cfg_t *gmac_cfg)
 
 	/* Mdio init */
 	mdio_init();
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+	/* 0x9: both MDIO buses were registered. */
+	ra80_debug_led_code(0x9);
+#endif
 
 	/* Getting the MAC address from ART partition */
 	ret = get_eth_mac_address(enet_addr, CONFIG_IPQ_NO_MACS);
@@ -873,8 +878,16 @@ int ipq_gmac_init(ipq_gmac_board_cfg_t *gmac_cfg)
 #endif
 			case QCA_8337:
 				if(gmac_cfg->ipq_swith){
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+					/* 0xb: QCA8337/S17C init is about to start. */
+					ra80_debug_led_code(0xb);
+#endif
 					ipq_gmac_macs[i]->ipq_swith =
 						QCA8337_switch_init(gmac_cfg);
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+					/* 0xc: QCA8337/S17C init returned. */
+					ra80_debug_led_code(0xc);
+#endif
 				}
 				break;
 			default:
@@ -890,14 +903,24 @@ int ipq_gmac_init(ipq_gmac_board_cfg_t *gmac_cfg)
 		if (gmac_cfg->ipq_swith &&
 			ipq_gmac_macs[i]->phy_external_link &&
 			!ipq_gmac_macs[i]->ipq_swith){
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+			ra80_debug_led_code(0xb);
+#endif
 			ipq_gmac_macs[i]->ipq_swith =
 				QCA8337_switch_init(gmac_cfg);
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+			ra80_debug_led_code(0xc);
+#endif
 		}
 		/* Tx/Rx Descriptor initialization */
 		if (ipq_gmac_tx_rx_desc_ring(dev[i]->priv) == -1)
 			goto init_failed;
 
 		eth_register(dev[i]);
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+		/* 0xa after GMAC0, 0xd after GMAC1. */
+		ra80_debug_led_code(i == 0 ? 0xa : 0xd);
+#endif
 	}
 	return 0;
 

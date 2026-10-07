@@ -22,6 +22,7 @@
 #include <asm/arch-qca-common/scm.h>
 #include <asm/arch-qca-common/iomap.h>
 #include <ipq5018.h>
+#include <ipq_api.h>
 #include <spi.h>
 #include <spi_flash.h>
 #if defined(CONFIG_ART_COMPRESSED) &&   \
@@ -1151,6 +1152,10 @@ static void enable_gephy_led(int gpio)
 int board_eth_init(bd_t *bis)
 {
 	int status;
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+	/* 0x4: eth_initialize() reached board_eth_init(). */
+	ra80_debug_led_code(0x4);
+#endif
 	int led_gpio;
 	int gmac_cfg_node = 0, offset = 0;
 	int loop = 0;
@@ -1163,12 +1168,20 @@ int board_eth_init(bd_t *bis)
 		 * Clock enable
 		 */
 		ethernet_clock_enable();
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+		/* 0x5: Ethernet/UNIPHY/GEPHY clocks and resets completed. */
+		ra80_debug_led_code(0x5);
+#endif
 		led_gpio = fdtdec_get_uint(gd->fdt_blob,
 				gmac_cfg_node, "gephy_led", 0);
 		if (led_gpio)
 			enable_gephy_led(led_gpio);
 
 		set_ext_mdio_gpio(gmac_cfg_node);
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+		/* 0x6: external MDIO GPIO mux configured. */
+		ra80_debug_led_code(0x6);
+#endif
 
 		for (offset = fdt_first_subnode(gd->fdt_blob, gmac_cfg_node);
 			offset > 0;
@@ -1214,6 +1227,10 @@ int board_eth_init(bd_t *bis)
 			switch_gpio =  fdtdec_get_uint(gd->fdt_blob, offset, "switch_gpio", 0);
 			if (switch_gpio) {
 				reset_s17c_switch_gpio(switch_gpio);
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+				/* 0x7: GPIO26 S17C/QCA8337 reset pulse completed. */
+				ra80_debug_led_code(0x7);
+#endif
 			}
 			gmac_cfg[loop].phy_type = fdtdec_get_uint(gd->fdt_blob,
 					offset, "phy_type", -1);
@@ -1243,7 +1260,16 @@ int board_eth_init(bd_t *bis)
 	if (loop < CONFIG_IPQ_NO_MACS)
 		 gmac_cfg[loop].unit = -1;
 
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+	/* 0x8: board description parsed; entering GMAC driver. */
+	ra80_debug_led_code(0x8);
+#endif
 	status = ipq_gmac_init(gmac_cfg);
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+	if (status)
+		/* 0xe: GMAC driver returned failure. */
+		ra80_debug_led_code(0xe);
+#endif
 	board_update_caldata();
 
 	return status;
