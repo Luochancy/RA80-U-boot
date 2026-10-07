@@ -28,20 +28,6 @@
 	console: serial@78AF000 {
 		status = "ok";
 		serial_gpio {
-			blsp0_mux_uart_rx {
-				gpio = <20>;
-				func = <0>;
-				pull = <GPIO_PULL_DOWN>;
-				drvstr = <GPIO_8MA>;
-				od_en = <GPIO_OD_DISABLE>;
-			};
-			blsp0_mux_uart_tx {
-				gpio = <21>;
-				func = <0>;
-				pull = <GPIO_PULL_DOWN>;
-				drvstr = <GPIO_8MA>;
-				od_en = <GPIO_OD_DISABLE>;
-			};
 			blsp0_uart_rx {
 				gpio = <28>;
 				func = <3>;
