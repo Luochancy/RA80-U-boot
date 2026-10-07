@@ -119,6 +119,13 @@ config IPQ5018_PZ_L8
 	help
 		Enable support for ipq5018 pz l8 support
 
+config IPQ5018_XIAOMI_RA80
+	bool "For Xiaomi AX3000 RA80 V1 support"
+	select 256MB_RAM
+	default n
+	help
+		Enable support for Xiaomi AX3000 RA80 V1
+
 config IPQ5018_CMCC_RAX3000Q
 	bool "For ipq5018 cmcc rax3000q support"
 	select 256MB_RAM

@@ -2,6 +2,8 @@ name: Build U-Boot for IPQ Devices
 
 on:
   push:
+    branches-ignore:
+      - xiaomi-ra80
   # pull_request:
   schedule:
     - cron: '0 0 15 * *'
