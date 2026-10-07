@@ -349,8 +349,12 @@ void btn_check_press(void) {
 			eth_initialize();
 #endif
 #ifdef CONFIG_IPQ5018_XIAOMI_RA80
-			/* 0xf: Ethernet init returned; enter HTTPD. */
-			ra80_debug_led_code(0xf);
+			/*
+			 * Keep the reset-held stage visible here.  eth_initialize()
+			 * only registers Ethernet devices; the first real PHY/MAC
+			 * start attempt happens from failsafe_httpd_poll().
+			 */
+			printf("RA80DBG: Ethernet devices registered; starting HTTPD poll loop\n");
 #endif
 			run_command("httpd", 0);
 			break;
