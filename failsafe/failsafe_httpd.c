@@ -1851,10 +1851,27 @@ void failsafe_httpd_poll(void) {
 
 	if (!eth_is_active(eth_get_dev())) {
 		if (!eth_init_attempted) {
+			int eth_ret;
+
 			eth_init_attempted = 1;
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+			/* 0xd: real MAC/PHY start attempt begins. */
+			ra80_debug_led_code(0xd);
+#endif
 			eth_halt();
 			eth_set_current();
-			eth_init();
+			eth_ret = eth_init();
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+			if (eth_ret < 0) {
+				/* 0xe: no registered Ethernet device established link. */
+				ra80_debug_led_code(0xe);
+				printf("RA80DBG: eth_init failed: %d\n", eth_ret);
+			} else {
+				/* 0xf: at least one Ethernet device is genuinely active. */
+				ra80_debug_led_code(0xf);
+				printf("RA80DBG: eth_init succeeded\n");
+			}
+#endif
 #if defined(CONFIG_IPQ5332) || defined(CONFIG_IPQ9574)
 			ppe_arp_kickstart();
 #endif
