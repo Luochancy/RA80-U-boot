@@ -71,25 +71,39 @@ jobs:
         run: |
           set -euxo pipefail
           PAYLOAD=u-boot.bin
-          KO="$(find /tmp/sdk/build_dir -type f -name ra80_stage_ethdiag.ko -print -quit)"
+          # Use the module directly emitted by Kbuild.  The OpenWrt package copy
+          # under .pkgdir has its vermagic entry removed by the SDK packaging
+          # pass, which makes it a weaker artifact for ABI inspection.
+          KO="$(find /tmp/sdk/build_dir -type f -name ra80_stage_ethdiag.ko ! -path '*/.pkgdir/*' ! -path '*/ipkg-*/*' -print -quit)"
           test -n "$KO"
           test -s "$KO"
+          KERNEL_TREE="$(find /tmp/sdk/build_dir -type d -path '*/linux-ipq50xx_arm/linux-4.4.60' -print -quit)"
+          test -n "$KERNEL_TREE"
+          grep -Fx '#define UTS_RELEASE "4.4.60"' "$KERNEL_TREE/include/generated/utsrelease.h"
           mkdir -p out
           cp "$KO" out/ra80_stage_ethdiag.ko
           cp "$PAYLOAD" out/openwrt-ipq5018_xiaomi_ra80-u-boot-leddiag.bin
           cp tools/ra80-kmod/RA80-RAM-STAGE-TESTING.md out/README.md
 
-          readelf -rW "$KO" | tee /tmp/relocations.txt
+          readelf -rW "$KO" > /tmp/relocations.txt
+          readelf -SW "$KO" > /tmp/sections.txt
+          readelf -sW "$KO" > /tmp/symbols.txt
+          strings "$KO" > /tmp/module-strings.txt
           if grep -qw R_ARM_REL32 /tmp/relocations.txt; then
             echo 'fatal: unsupported R_ARM_REL32 relocation remains in module' >&2
             exit 1
           fi
-          readelf -SW "$KO" | grep -F '.core.plt'
-          readelf -SW "$KO" | grep -F '.init.plt'
-          strings "$KO" | grep -F 'vermagic=4.4.60'
-          if readelf -sW "$KO" | grep ' UND ' | grep -Eiq '(mtd|nand|ubi|flash|erase|_soft_restart|smp_send_stop)'; then
+          grep -F '.core.plt' /tmp/sections.txt
+          grep -F '.init.plt' /tmp/sections.txt
+          grep -Eq 'GCC: .*5\.5\.0' /tmp/module-strings.txt
+          VERMAGIC="$(sed -n 's/^vermagic=//p' /tmp/module-strings.txt | head -n 1)"
+          if [[ -n "$VERMAGIC" && "$VERMAGIC" != 4.4.60* ]]; then
+            echo "fatal: unexpected module vermagic: $VERMAGIC" >&2
+            exit 1
+          fi
+          if grep ' UND ' /tmp/symbols.txt | grep -Eiq '(mtd|nand|ubi|flash|erase|_soft_restart|smp_send_stop)'; then
             echo 'fatal: forbidden flash or jump symbol imported by stage module' >&2
-            readelf -sW "$KO" | grep ' UND ' | grep -Ei '(mtd|nand|ubi|flash|erase|_soft_restart|smp_send_stop)' >&2
+            grep ' UND ' /tmp/symbols.txt | grep -Ei '(mtd|nand|ubi|flash|erase|_soft_restart|smp_send_stop)' >&2
             exit 1
           fi
 
@@ -97,6 +111,9 @@ jobs:
             echo "Source commit: $GITHUB_SHA"
             echo "Module toolchain: QSDK 11.4.0.5.7418 / Linux 4.4 / GCC 5.5.0"
             echo "U-Boot toolchain: OpenWrt GCC 5.2.0"
+            echo "Kernel release gate: $(cat "$KERNEL_TREE/include/generated/utsrelease.h")"
+            echo "Module vermagic: ${VERMAGIC:-not emitted by this QSDK Kbuild}"
+            echo "Module compiler: $(grep -E 'GCC: .*5\.5\.0' /tmp/module-strings.txt | head -n 1)"
             echo
             cat /tmp/payload-info.txt
             echo
@@ -108,13 +125,13 @@ jobs:
             strings "$KO" | grep -E '^(vermagic|depends|license|description|author|version)=' || true
             echo
             echo '--- module sections ---'
-            readelf -SW "$KO"
+            cat /tmp/sections.txt
             echo
             echo '--- module relocations ---'
             cat /tmp/relocations.txt
             echo
             echo '--- undefined imports ---'
-            readelf -sW "$KO" | grep ' UND ' || true
+            grep ' UND ' /tmp/symbols.txt || true
           } | tee out/inspection.txt
 
       - name: Upload verified RAM-only stage bundle
