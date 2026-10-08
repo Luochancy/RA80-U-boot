@@ -1,0 +1,123 @@
+name: Build RA80 RAM-only LED diagnostic stage
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - xiaomi-ra80
+
+concurrency:
+  group: ra80-ram-stage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    env:
+      TOOLCHAIN: https://github.com/1980490718/toolchain-arm_cortex-a7_gcc-5.2.0.git
+      SDK_URL: https://github.com/hzyitc/openwrt-redmi-ax3000/releases/download/ci-ipq50xx-qsdk-kernel-4.4-openwrt-21.02-qsdk-11.4.0.5.7418-20240727-173443-UTC/openwrt-sdk-ipq50xx-arm_gcc-5.5.0_musl_eabi.Linux-x86_64.tar.xz
+      SDK_SHA256: 9d76ebd0d3dd02c2a6568d0f429acbbba1175f21b9a37dbb1b6f0be144919df3
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y build-essential libncurses5-dev gawk git gettext libssl-dev python3 wget curl xz-utils cpio flex bison bc rsync zopfli device-tree-compiler nodejs npm file binutils
+          sudo npm install -g html-minifier-terser clean-css terser svgo
+
+      - name: Build matching RA80 U-Boot payload
+        run: |
+          set -euxo pipefail
+          git clone --depth=1 "$TOOLCHAIN" ../staging_dir
+          test -x ../staging_dir/toolchain-arm_cortex-a7_gcc-5.2.0_musl-1.1.16_eabi/bin/arm-openwrt-linux-gcc
+          chmod +x build.sh
+          ./build.sh ipq5018_xiaomi_ra80
+          test -s bin/openwrt-ipq5018_xiaomi_ra80-u-boot.mbn
+
+      - name: Download matching stock-kernel SDK
+        run: |
+          set -euxo pipefail
+          curl -fL --retry 5 --retry-delay 2 "$SDK_URL" -o /tmp/sdk.tar.xz
+          echo "$SDK_SHA256  /tmp/sdk.tar.xz" | sha256sum -c -
+          mkdir -p /tmp/sdk
+          tar -xJf /tmp/sdk.tar.xz -C /tmp/sdk --strip-components=1
+
+      - name: Install generated-payload stage package
+        run: |
+          set -euxo pipefail
+          PAYLOAD="$GITHUB_WORKSPACE/bin/openwrt-ipq5018_xiaomi_ra80-u-boot.mbn"
+          PACKAGE=/tmp/sdk/package/ra80-stage-ethdiag
+          mkdir -p "$PACKAGE/src"
+          python3 tools/ra80-kmod/bin2c.py "$PAYLOAD" "$PACKAGE/src/ra80_payload.inc" --source-commit "$GITHUB_SHA" | tee /tmp/payload-info.txt
+          cp tools/ra80-kmod/OpenWrt.Stage.Makefile "$PACKAGE/Makefile"
+          cp tools/ra80-kmod/ra80_stage_ethdiag.c "$PACKAGE/src/"
+          cp tools/ra80-kmod/Stage.Kbuild "$PACKAGE/src/Makefile"
+
+      - name: Build stage with QSDK 11.4 GCC 5.5 kernel ABI
+        run: |
+          set -euxo pipefail
+          cd /tmp/sdk
+          make defconfig
+          make package/ra80-stage-ethdiag/compile V=s -j2
+
+      - name: Collect and statically verify artifacts
+        run: |
+          set -euxo pipefail
+          PAYLOAD=bin/openwrt-ipq5018_xiaomi_ra80-u-boot.mbn
+          KO="$(find /tmp/sdk/build_dir -type f -name ra80_stage_ethdiag.ko -print -quit)"
+          test -n "$KO"
+          test -s "$KO"
+          mkdir -p out
+          cp "$KO" out/ra80_stage_ethdiag.ko
+          cp "$PAYLOAD" out/openwrt-ipq5018_xiaomi_ra80-u-boot-leddiag.mbn
+          cp tools/ra80-kmod/RA80-RAM-STAGE-TESTING.md out/README.md
+
+          readelf -rW "$KO" | tee /tmp/relocations.txt
+          if grep -qw R_ARM_REL32 /tmp/relocations.txt; then
+            echo 'fatal: unsupported R_ARM_REL32 relocation remains in module' >&2
+            exit 1
+          fi
+          readelf -SW "$KO" | grep -F '.core.plt'
+          readelf -SW "$KO" | grep -F '.init.plt'
+          strings "$KO" | grep -F 'vermagic=4.4.60'
+          if readelf -sW "$KO" | grep ' UND ' | grep -Eiq '(mtd|nand|ubi|flash|erase|_soft_restart|smp_send_stop)'; then
+            echo 'fatal: forbidden flash or jump symbol imported by stage module' >&2
+            readelf -sW "$KO" | grep ' UND ' | grep -Ei '(mtd|nand|ubi|flash|erase|_soft_restart|smp_send_stop)' >&2
+            exit 1
+          fi
+
+          {
+            echo "Source commit: $GITHUB_SHA"
+            echo "Module toolchain: QSDK 11.4.0.5.7418 / Linux 4.4 / GCC 5.5.0"
+            echo "U-Boot toolchain: OpenWrt GCC 5.2.0"
+            echo
+            cat /tmp/payload-info.txt
+            echo
+            sha256sum out/ra80_stage_ethdiag.ko out/openwrt-ipq5018_xiaomi_ra80-u-boot-leddiag.mbn
+            echo
+            file out/ra80_stage_ethdiag.ko out/openwrt-ipq5018_xiaomi_ra80-u-boot-leddiag.mbn
+            echo
+            echo '--- module metadata ---'
+            strings "$KO" | grep -E '^(vermagic|depends|license|description|author|version)=' || true
+            echo
+            echo '--- module sections ---'
+            readelf -SW "$KO"
+            echo
+            echo '--- module relocations ---'
+            cat /tmp/relocations.txt
+            echo
+            echo '--- undefined imports ---'
+            readelf -sW "$KO" | grep ' UND ' || true
+          } | tee out/inspection.txt
+
+      - name: Upload verified RAM-only stage bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: RA80-RAM-only-LED-diagnostic-stage
+          path: out/
+          if-no-files-found: error
+          retention-days: 30
