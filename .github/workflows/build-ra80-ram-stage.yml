@@ -183,7 +183,7 @@ jobs:
       - name: Upload verified RAM-only full test bundle
         uses: actions/upload-artifact@v4
         with:
-          name: RA80-RAM-only-runtime-focus
+          name: RA80-RAM-only-network-no-NAND
           path: out/
           if-no-files-found: error
           retention-days: 30

@@ -437,6 +437,9 @@ static int initr_spi(void)
 /* go init the NAND */
 static int initr_nand(void)
 {
+	/* RAM networking has no flash dependency; do not touch Linux-owned QPIC. */
+	if (ra80_ram_test_active())
+		return 0;
 	ra80_runtime_stage(RA80_RT_NAND);
 	puts("NAND:  ");
 	nand_init();
@@ -498,7 +501,9 @@ static int initr_env(void)
 {
 	ra80_runtime_stage(RA80_RT_ENV);
 	/* initialize environment */
-	if (should_load_env())
+	if (ra80_ram_test_active())
+		set_default_env(NULL);
+	else if (should_load_env())
 		env_relocate();
 	else
 		set_default_env(NULL);

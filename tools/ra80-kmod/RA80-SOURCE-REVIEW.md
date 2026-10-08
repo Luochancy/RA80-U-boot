@@ -134,3 +134,13 @@ placement before BSS, and every stage definition has one source owner.
 RA80目标现已从编译期禁用CONFIG_QSPI_SERIAL_TRAINING，并固定反馈时钟/200MHz输入的保守配置。验证脚本要求链接图无training_block_64且payload无0:TRAINING字符串。
 
 env_import的坏CRC/解密失败原先会自动saveenv。RAM标记现从运行期初始化之前生效，禁止这两条自动保存路径，并在qpic_nand_write_page和qpic_nand_blk_erase排队硬件操作之前拒绝RAM模式写/擦请求。main_loop消费标记后模式继续锁存。正常非RAM启动仍可手动保存环境；RA80自动训练对所有RA80构建均禁用。
+
+## 26d78f5 实机双白：存储初始化区间阻塞
+
+用户确认26d78f5模块仍停在A（两灯仅白珠亮）。这一版A位于initr_nand入口，且早于puts("NAND: ")；B位于initr_env入口。因此确证范围是这两个入口之间，尚未走到board_eth_init/ipq_gmac_init/HTTP。不能把A解释为网络已启动，也不能确定是UART输出、QPIC/BAM初始化还是NAND探测中的具体指令。
+
+RAM网络模式现直接在initr_nand最前面返回，不发起QPIC/BAM/NAND初始化；initr_env只建立默认RAM环境；get_eth_mac_address从RAM模式生成本地管理临时单播MAC，对set_ethmac_addr与GMAC的两次调用均生效，避免回头读取ART。board_late_init跳过闪存分区与保护处理，保留SoC变量和网络相关准备。HTTP about信息仅在nand_info.size/writesize非零时读芯片，跳过初始化后其BSS值为0。网页升级及命令继续拦截。
+
+此改动解决RAM测试对NAND初始化成功的依赖；冷启动NAND驱动仍需独立验证。BAM等待存在外层循环重置超时起点的问题，但没有硬件日志证明本次停在该循环，故本次不修改共享BAM驱动或猜测重置寄存器。
+
+本版关闭CONFIG_RA80_RUNTIME_DIAGNOSTICS，完整码表恢复：B=main_loop、C=board_eth_init、D=GMAC、E=网卡注册返回并开始HTTP、F=HTTP轮询观察到eth_is_active。F仍不证明ARP/ICMP/HTTP收发正常。

@@ -41,6 +41,18 @@ def verify_source():
     assert re.search(r'return ra80_ram_test_mode \|\|\s+ra80_ramboot_magic == RA80_RAMBOOT_MAGIC_ARMED;', main)
     cfg = (root/'include/configs/ipq5018.h').read_text()
     assert '#ifndef CONFIG_IPQ5018_XIAOMI_RA80\n#define CONFIG_QSPI_SERIAL_TRAINING\n#endif' in cfg
+    board_r = (root/'common/board_r.c').read_text()
+    nand_init = board_r[board_r.index('static int initr_nand(void)'):board_r.index('#if defined(CONFIG_CMD_ONENAND)')]
+    assert re.search(r'if \(ra80_ram_test_active\(\)\)\s+return 0;', nand_init)
+    assert nand_init.index('return 0;') < nand_init.index('puts(') < nand_init.index('nand_init();')
+    env_init = board_r[board_r.index('static int initr_env(void)'):board_r.index('#ifdef CONFIG_SYS_BOOTPARAMS_LEN')]
+    assert re.search(r'if \(ra80_ram_test_active\(\)\)\s+set_default_env\(NULL\);\s+else if \(should_load_env\(\)\)', env_init)
+    ethaddr = (root/'board/qca/arm/common/ethaddr.c').read_text()
+    assert ethaddr.index('if (ra80_ram_test_active())') < ethaddr.index('smem_getpart("0:ART"')
+    assert '0x02, 0x52, 0x41, 0x38, 0x30, 0x10' in ethaddr
+    late = (root/'board/qca/arm/common/board_init.c').read_text()
+    assert 'if (!ra80_ram_test_active() && sfi->flash_type' in late
+    print('PASS: RAM networking skips NAND, flash environment and ART dependencies')
     print('PASS: RAM marker protects early and late NAND writes; no automatic env save')
     print('PASS: each U-Boot boundary has one stage owner; one fixed Linux handoff code')
 

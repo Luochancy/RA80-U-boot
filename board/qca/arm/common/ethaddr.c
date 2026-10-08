@@ -12,6 +12,7 @@
  */
 
 #include <common.h>
+#include <ra80_bootstage.h>
 #include <asm/errno.h>
 #include <nand.h>
 #include <part.h>
@@ -65,6 +66,19 @@ int get_eth_mac_address(uchar *enetaddr, uint no_of_macs)
 	unsigned long desMaxSize;
 #endif
 #endif
+
+	/* A RAM-only boot never probes ART or an uninitialized NAND device. */
+	if (ra80_ram_test_active()) {
+		uint i;
+		static const uchar ram_mac[6] = { 0x02, 0x52, 0x41, 0x38, 0x30, 0x10 };
+		if (!enetaddr || no_of_macs > CONFIG_IPQ_NO_MACS)
+			return -EINVAL;
+		for (i = 0; i < no_of_macs; i++) {
+			memcpy(enetaddr + 6 * i, ram_mac, sizeof(ram_mac));
+			enetaddr[6 * i + 5] += i;
+		}
+		return 0;
+	}
 
 	if (sfi->flash_type != SMEM_BOOT_MMC_FLASH) {
 		if (qca_smem_flash_info.flash_type == SMEM_BOOT_SPI_FLASH)

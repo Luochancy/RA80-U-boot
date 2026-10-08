@@ -518,7 +518,7 @@ int board_late_init(void)
 	qca_smem_flash_info_t *sfi = &qca_smem_flash_info;
 
 	ra80_runtime_stage(RA80_RT_LATE);
-	if (sfi->flash_type != SMEM_BOOT_MMC_FLASH &&
+	if (!ra80_ram_test_active() && sfi->flash_type != SMEM_BOOT_MMC_FLASH &&
 	    sfi->flash_type != SMEM_BOOT_NO_FLASH) {
 		get_kernel_fs_part_details();
 	}
@@ -600,7 +600,8 @@ int board_late_init(void)
 	if (soc_hw_version)
 		setenv_hex("soc_hw_version", (unsigned long)soc_hw_version);
 #ifdef CONFIG_FLASH_PROTECT
-	board_flash_protect();
+	if (!ra80_ram_test_active())
+		board_flash_protect();
 #endif
 	set_ethmac_addr();
 
