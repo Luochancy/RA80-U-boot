@@ -220,15 +220,15 @@ static int ra80_led_calibrate(void)
 		ra80_led_saved_io[i] = readl(p + 4);
 	}
 	ra80_led_saved = true;
-	pr_info("ra80_ramboot_full: LED TEST ONLY; no payload writes, watchdog changes or jump\\n");
+	pr_info("ra80_ramboot_full: LED TEST ONLY; no payload writes, watchdog changes or jump\n");
 	for (i = 0; i < ARRAY_SIZE(codes); i++) {
-		pr_info("ra80_ramboot_full: LED TEST raw code=%x GPIO17/19/20/22 hold=4000ms\\n",
+		pr_info("ra80_ramboot_full: LED TEST raw code=%x GPIO17/19/20/22 hold=4000ms\n",
 			codes[i]);
 		ra80_handoff_led(codes[i]);
 		msleep(4000);
 	}
 	release_resources();
-	pr_info("ra80_ramboot_full: LED TEST registers restored\\n");
+	pr_info("ra80_ramboot_full: LED TEST registers restored\n");
 	return 0;
 }
 
