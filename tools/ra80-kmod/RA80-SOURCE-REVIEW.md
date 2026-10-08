@@ -11,9 +11,24 @@ successful RAM staging/restore does not prove an executable U-Boot has initializ
 The latest counted-entry sequence proves reset, parameter return and CPU setup
 were reached before _main. It does not prove FDT, DRAM, caches or Ethernet ran.
 PC carrier remaining up does not prove packets can reach the CPU.
-The exact current post-_main hardware failure is still unproven.
+Actions run 37815421283 established a definite memory-layout failure in the
+reviewed configuration: __bss_end exceeds 0x4aa00000. CRT0 clears BSS before
+board_init_f, so this crosses the stock U-Boot reservation even before Ethernet.
+This is a concrete defect and plausible contributor to the observed partial
+boot; hardware confirmation after the correction is still required.
 
 ## Definite defects corrected
+
+The generic lwIP options reserve a 512 KiB static heap plus 64 packet buffers
+and 512 TCP segments. Combined with the image and other BSS, the RA80 layout
+fails the stock reserved-window check. RA80 now uses a 128 KiB heap, 16 packet
+buffers, 128 TCP segments and 8-MSS windows, retaining the larger defaults for
+other targets. CI must prove the entire BSS/page-table/copied-DTB fits.
+The old lwIP configuration explicitly disables ICMP, and its trimmed source
+omits the ICMP implementation. Thus ping is not a valid success criterion for
+that old HTTP stack. The missing upstream ICMP sources/headers are restored and
+enabled only for RA80, making ping useful when ARP and the data path work.
+This ICMP defect alone does not explain an unreachable HTTP page.
 
 The earlier assembly lost the high GPIO address bits after MOVW at subsequent
 pins. 506331c restored MOVT for every address. This patch keeps independent

@@ -47,6 +47,7 @@ assert len(blob) <= LIMIT - BASE, "payload exceeds reserved window"
 assert symbol('_start') == BASE
 assert symbol('__bss_start') >= BASE
 bss_end = symbol('__bss_end')
+print("linked_bss_start=%08x linked_bss_end=%08x reserved_end=%08x" % (symbol("__bss_start"), bss_end, LIMIT), flush=True)
 assert bss_end <= LIMIT, "BSS exceeds reserved window"
 pgtable = (bss_end + 0xFFFF) & ~0xFFFF
 # This target has no ARMv7 LPAE: reserve_mmu uses a 16 KiB table.

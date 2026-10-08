@@ -21,6 +21,7 @@ obj-y += lwip/core/netif.o
 obj-y += lwip/core/ip.o
 obj-y += lwip/core/ipv4/ip4.o
 obj-y += lwip/core/ipv4/ip4_addr.o
+obj-$(CONFIG_IPQ5018_XIAOMI_RA80) += lwip/core/ipv4/icmp.o
 obj-y += lwip/core/ipv4/etharp.o
 obj-y += lwip/core/inet_chksum.o
 obj-y += lwip/core/tcp.o

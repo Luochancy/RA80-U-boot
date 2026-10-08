@@ -19,7 +19,11 @@
 #define IP_FRAG                          0
 #define IP_REASS_MAX_PBUFS               0
 
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+#define LWIP_ICMP                        1
+#else
 #define LWIP_ICMP                        0
+#endif
 #define LWIP_IGMP                        0
 
 #define LWIP_UDP                         0
@@ -27,10 +31,16 @@
 #define LWIP_TCP_KEEPALIVE               0
 #define LWIP_SINGLE_NETIF                1
 #define TCP_MSS                           1446
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+/* Fit the complete runtime below the stock 0x4aa00000 reservation boundary. */
+#define TCP_SND_BUF                       (TCP_MSS * 8)
+#define TCP_WND                           (TCP_MSS * 8)
+#else
 #define TCP_SND_BUF                       (TCP_MSS * 45)
+#define TCP_WND                           (TCP_MSS * 45)
+#endif
 #define TCP_SND_QUEUELEN                  (4 * TCP_SND_BUF / TCP_MSS)
 #define TCP_SNDLOWAT                      LWIP_MAX(TCP_SND_BUF / 4, (2 * TCP_MSS) + 1)
-#define TCP_WND                           (TCP_MSS * 45)
 #define TCP_QUEUE_OOSEQ                   1
 #define LWIP_TCP_SACK_OUT                 1
 #define LWIP_TCP_MAX_SACK_NUM             4
@@ -42,7 +52,11 @@
 #define TCP_SYNMAXRTX                     6
 #define TCP_OOSEQ_MAX_PBUFS               32
 #define TCP_OOSEQ_MAX_BYTES               0
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+#define MEMP_NUM_TCP_SEG                  128
+#else
 #define MEMP_NUM_TCP_SEG                  512
+#endif
 #define MEMP_NUM_TCP_PCB_LISTEN           2
 #define MEMP_NUM_TCP_PCB                  4
 #define MEMP_NUM_REASSDATA                0
@@ -51,13 +65,18 @@
 #define LWIP_NETIF_TX_SINGLE_PBUF         0
 #define TCP_OVERSIZE                      TCP_MSS
 
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+#define MEM_SIZE                          (128 * 1024)
+#define PBUF_POOL_SIZE                    16
+#else
 #define MEM_SIZE                          (512 * 1024)
+#define PBUF_POOL_SIZE                    64
+#endif
 #define MEM_ALIGNMENT                     4
 #define MEMP_OVERFLOW_CHECK               0
 #define MEMP_SANITY_CHECK                 0
 #define MEM_USE_POOLS                     0
 
-#define PBUF_POOL_SIZE                    64
 #define PBUF_POOL_BUFSIZE                (TCP_MSS + 40 + 14)
 #define PBUF_LINK_HLEN                    14
 

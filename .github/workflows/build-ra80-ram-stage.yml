@@ -40,6 +40,11 @@ jobs:
           test -s u-boot.bin
 
           test -s u-boot.map
+          mkdir -p diagnostics
+          cp u-boot.map diagnostics/
+          cp .config diagnostics/uboot.config
+          ../staging_dir/toolchain-arm_cortex-a7_gcc-5.2.0_musl-1.1.16_eabi/bin/arm-openwrt-linux-nm -S --size-sort u-boot > diagnostics/symbol-sizes.txt
+          python3 tools/ra80-kmod/verify_bootstages.py u-boot.bin u-boot.map | tee diagnostics/bootstage-verification.txt
           # The final ELF is stripped; use the symbol address from its link map.
           MAGIC_ADDRESS="$(awk '$NF == "ra80_ramboot_magic" { print $(NF - 1); exit }' u-boot.map)"
           test -n "$MAGIC_ADDRESS"
@@ -96,7 +101,8 @@ jobs:
           grep -Fx '#define UTS_RELEASE "4.4.60"' "$KERNEL_TREE/include/generated/utsrelease.h"
 
           mkdir -p out
-          python3 tools/ra80-kmod/verify_bootstages.py u-boot.bin u-boot.map | tee out/bootstage-verification.txt
+          cp diagnostics/bootstage-verification.txt out/
+          cp diagnostics/symbol-sizes.txt out/
           cp u-boot.map out/
           cp .config out/uboot.config
           cp tools/ra80-kmod/RA80-SOURCE-REVIEW.md out/
@@ -165,6 +171,14 @@ jobs:
             echo '--- full module undefined imports ---'
             grep ' UND ' /tmp/ra80_ramboot_full.ko.symbols.txt || true
           } | tee out/inspection.txt
+
+      - name: Preserve layout evidence if verification fails
+        if: failure() && hashFiles('diagnostics/**') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: RA80-layout-diagnostics-no-modules
+          path: diagnostics/
+          retention-days: 30
 
       - name: Upload verified RAM-only full test bundle
         uses: actions/upload-artifact@v4
