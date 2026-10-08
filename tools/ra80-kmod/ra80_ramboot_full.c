@@ -49,6 +49,23 @@ MODULE_PARM_DESC(delay_ms, "Final pre-handoff delay in milliseconds (1000..10000
 
 static void __iomem *ra80_uboot_map;
 static void __iomem *ra80_watchdog_map;
+static void __iomem *ra80_led_map;
+static const unsigned int ra80_led_gpio[4] = { 17, 19, 20, 22 };
+static u32 ra80_led_saved_cfg[4], ra80_led_saved_io[4];
+static bool ra80_led_saved;
+
+static void ra80_handoff_led(unsigned int code)
+{
+	unsigned int i;
+	for (i = 0; i < 4; i++) {
+		u8 __iomem *p = (u8 __iomem *)ra80_led_map +
+				ra80_led_gpio[i] * 0x1000;
+		writel((code & (1U << i)) ? 2 : 0, p + 4);
+		writel(0x2c1, p); /* GPIO, 8mA, output enabled, pull down. */
+	}
+	mb();
+}
+
 static u8 *ra80_stock_backup;
 static u32 ra80_stock_fnv1a;
 static bool ra80_payload_written;
@@ -149,6 +166,20 @@ static int restore_stock(void)
 
 static void release_resources(void)
 {
+	if (ra80_led_map) {
+		unsigned int i;
+		if (ra80_led_saved)
+			for (i = 0; i < 4; i++) {
+				u8 __iomem *p = (u8 __iomem *)ra80_led_map +
+						ra80_led_gpio[i] * 0x1000;
+				writel(ra80_led_saved_io[i], p + 4);
+				writel(ra80_led_saved_cfg[i], p);
+			}
+		mb();
+		iounmap(ra80_led_map);
+		ra80_led_map = NULL;
+		ra80_led_saved = false;
+	}
 	if (ra80_watchdog_map) {
 		iounmap(ra80_watchdog_map);
 		ra80_watchdog_map = NULL;
@@ -288,6 +319,27 @@ static int __init ra80_ramboot_full_init(void)
 	pr_emerg("ra80_ramboot_full: PREFLIGHT PASS soft=%08lx raw=%08lx smp=%08lx watchdog=%08x\n",
 		 soft_restart, raw_restart, smp_stop, watchdog_value);
 
+	/* Save only the four LED registers; never touch Reset/Mesh/switch reset. */
+	ra80_led_map = ioremap(0x01000000UL, 0x17000);
+	if (!ra80_led_map)
+		return fail_with_rollback(-ENOMEM);
+	{
+		unsigned int i;
+		for (i = 0; i < 4; i++) {
+			u8 __iomem *led = (u8 __iomem *)ra80_led_map +
+					 ra80_led_gpio[i] * 0x1000;
+			ra80_led_saved_cfg[i] = readl(led);
+			ra80_led_saved_io[i] = readl(led + 4);
+		}
+		ra80_led_saved = true;
+	}
+	/* Separate Linux preparation from the U-Boot reset entry visually. */
+	ra80_handoff_led(0);
+	msleep(500);
+	ra80_handoff_led(4); /* system off, network yellow */
+	msleep(1000);
+	ra80_handoff_led(8); /* system off, network blue */
+	pr_emerg("ra80_ramboot_full: LED DIAG Linux countdown network blue\n");
 	remaining = delay_ms;
 	while (remaining > 0) {
 		unsigned int slice = remaining > 1000 ? 1000 : remaining;
@@ -313,7 +365,9 @@ static int __init ra80_ramboot_full_init(void)
 	jump_to_ram = (ra80_raw_restart_fn_t)raw_restart;
 	pr_emerg("ra80_ramboot_full: HANDOFF NOW entry=%08lx watchdog=0\n",
 		 RA80_UBOOT_PHYS);
+	ra80_handoff_led(0xc); /* system off, network white: before SMP stop */
 	stop_secondary();
+	ra80_handoff_led(0x4); /* network yellow: SMP stop returned, raw restart next */
 	writel(0, ra80_watchdog_map);
 	mb();
 	jump_to_ram(RA80_UBOOT_PHYS, true);
