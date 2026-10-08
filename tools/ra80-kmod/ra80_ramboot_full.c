@@ -39,6 +39,10 @@ extern unsigned long kallsyms_lookup_name(const char *name);
 typedef void (*ra80_smp_stop_fn_t)(void);
 typedef void (*ra80_raw_restart_fn_t)(unsigned long, bool);
 
+static bool led_test;
+module_param(led_test, bool, 0444);
+MODULE_PARM_DESC(led_test, "Reversible raw GPIO LED calibration only; no payload or handoff");
+
 static bool execute;
 module_param(execute, bool, 0444);
 MODULE_PARM_DESC(execute, "Must be 1 to perform the guarded RAM-only handoff");
@@ -200,6 +204,34 @@ static int fail_with_rollback(int error)
 	return error;
 }
 
+/* Calibration writes only four LED GPIOs and restores both registers.
+ * Raw values deliberately avoid assuming colour, wiring order or polarity. */
+static int ra80_led_calibrate(void)
+{
+	static const unsigned int codes[] = { 0, 15, 1, 2, 4, 8 };
+	unsigned int i;
+	ra80_led_map = ioremap(0x01000000UL, 0x17000);
+	if (!ra80_led_map)
+		return -ENOMEM;
+	for (i = 0; i < 4; i++) {
+		u8 __iomem *p = (u8 __iomem *)ra80_led_map +
+				ra80_led_gpio[i] * 0x1000;
+		ra80_led_saved_cfg[i] = readl(p);
+		ra80_led_saved_io[i] = readl(p + 4);
+	}
+	ra80_led_saved = true;
+	pr_info("ra80_ramboot_full: LED TEST ONLY; no payload writes, watchdog changes or jump\\n");
+	for (i = 0; i < ARRAY_SIZE(codes); i++) {
+		pr_info("ra80_ramboot_full: LED TEST raw code=%x GPIO17/19/20/22 hold=4000ms\\n",
+			codes[i]);
+		ra80_handoff_led(codes[i]);
+		msleep(4000);
+	}
+	release_resources();
+	pr_info("ra80_ramboot_full: LED TEST registers restored\\n");
+	return 0;
+}
+
 static int __init ra80_ramboot_full_init(void)
 {
 	u8 __iomem *p;
@@ -213,6 +245,12 @@ static int __init ra80_ramboot_full_init(void)
 	u32 armed_hash;
 	unsigned int remaining;
 	int ret;
+
+	if (led_test) {
+		if (execute)
+			return -EINVAL;
+		return ra80_led_calibrate();
+	}
 
 	pr_emerg("ra80_ramboot_full: guarded FULL RAM HANDOFF requested\n");
 	pr_emerg("ra80_ramboot_full: RAM ONLY; NO NAND/MTD/APPSBL writes\n");
@@ -367,7 +405,7 @@ static int __init ra80_ramboot_full_init(void)
 		 RA80_UBOOT_PHYS);
 	ra80_handoff_led(0xc); /* system off, network white: before SMP stop */
 	stop_secondary();
-	ra80_handoff_led(0x4); /* network yellow: SMP stop returned, raw restart next */
+	ra80_handoff_led(0x2); /* system blue only: SMP stop returned, raw restart next */
 	writel(0, ra80_watchdog_map);
 	mb();
 	jump_to_ram(RA80_UBOOT_PHYS, true);
