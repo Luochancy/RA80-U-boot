@@ -30,12 +30,40 @@ starts Webfailsafe, so the complete test does not require holding Reset while
 stock Linux is running. A normal or flashed image keeps the original
 button-controlled behavior.
 
+## Raw LED calibration first
+
+Because observed colours do not match the assumed active-high wiring, run
+only the calibration mode before another handoff. Copy the new full module
+to /tmp, reboot to stock first, then run:
+
+```sh
+devmem 0x4a920000 32
+insmod /tmp/ra80_ramboot_full.ko led_test=1
+dmesg | grep 'LED TEST' | tail -10
+rmmod ra80_ramboot_full
+devmem 0x4a920000 32
+```
+
+Do not pass execute=1 during calibration. SSH stays connected. The test holds
+six raw codes, each for four seconds: 0, F, 1, 2, 4, 8. Report each as
+Internet (lamp 1) / System (lamp 2); an unmentioned lamp means off.
+Raw code bits correspond to GPIO17,19,20,22, without assuming the actual
+colour or polarity. It restores the original four GPIO configuration and
+output registers before insmod returns. The payload RAM and watchdog are
+untouched, and the vector remains EA0000B8. The module must be unloaded
+before any later handoff test.
+
+The early assembly now explicitly clears the configuration register high
+half, and uses a sixteen-times-longer bounded dwell loop. This fixes an
+uninitialized upper half in the previous diagnostic, but does not establish
+that it caused the hardware handoff failure.
+
 ## Early LED handoff diagnostics
 
 Watch the LEDs continuously or record a video before running insmod.
 Linux first turns both off for 500 ms, shows network yellow for one second,
 then network blue during the countdown. Before SMP stop it shows network
-white; after SMP stop returns it shows network yellow again. The system LED
+white; after SMP stop returns it shows system blue only. The system LED
 remains off during these Linux stages.
 
 The first instructions at U-Boot reset show system yellow / network off,
