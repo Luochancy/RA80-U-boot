@@ -1,20 +1,34 @@
-# RA80 V1 RAM-only LED diagnostic stage
+# RA80 V1 complete RAM-only U-Boot test
 
-This artifact targets Xiaomi RA80 V1 / IPQ5018 stock Linux 4.4.60. The stage
-module is built by the matching QSDK 11.4 / GCC 5.5 SDK. It contains the U-Boot
-payload built from the same Git commit.
+This bundle targets Xiaomi RA80 V1 / IPQ5018 stock Linux 4.4.60. Both kernel
+modules are built by the matching QSDK 11.4 / GCC 5.5 SDK, and both contain the
+U-Boot payload built from the same Git commit.
 
 ## Safety boundary
 
-`ra80_stage_ethdiag.ko` only replaces the reserved U-Boot copy at physical
-address `0x4a920000` in RAM. It refuses to load unless the observed stock vector
-is `EA0000B8 E59FF014 E59FF014 E59FF014`, keeps a full backup, verifies every
-payload byte, rolls back immediately on a mismatch, and restores stock RAM when
-removed. It has no restart function, no watchdog control, and no NAND/MTD path.
+`ra80_ramboot_full.ko` is a one-shot RAM handoff. It accepts only the measured
+stock APPSBL vectors, exact stock-kernel function addresses and instruction
+fingerprints, and watchdog value `1`. It backs up the full overwritten RAM
+window, verifies every payload byte, writes a one-word Webfailsafe marker only
+inside that RAM copy, then disables the watchdog, stops the secondary CPU, and
+jumps to physical address `0x4a920000`.
 
-Do not flash the bundled flat `.bin` image to APPSBL or APPSBL_1. It is a
-RAM-load image, included so the module payload can be independently hashed and
-inspected.
+Every error before watchdog disable restores the original RAM byte-for-byte.
+The module has no NAND, MTD, UBI, flash, or APPSBL call path. Power cycling
+returns to Xiaomi's original boot chain. Never flash the bundled flat `.bin`
+file to APPSBL or APPSBL_1.
+
+`ra80_stage_ethdiag.ko` remains the reversible, non-jumping diagnostic module.
+It is included for inspection and rollback tests, but it is not needed for the
+complete one-shot test below.
+
+## Automatic Webfailsafe entry
+
+The normal U-Boot image contains a guard word. The full module changes that
+word only in the staged RAM copy. U-Boot consumes it once and automatically
+starts Webfailsafe, so the complete test does not require holding Reset while
+stock Linux is running. A normal or flashed image keeps the original
+button-controlled behavior.
 
 ## LED stage code
 
@@ -24,8 +38,7 @@ The two physical LEDs are dual-colour. Each code is shown as
 | Code | Visible colours | Meaning |
 | --- | --- | --- |
 | `1` | yellow / off | LED and FDT setup reached |
-| `2` | blue / off | Reset detected |
-| `3` | white / off | Reset held for three seconds |
+| `2` | blue / off | RAM-only auto-Webfailsafe marker accepted |
 | `4` | off / yellow | `board_eth_init()` entered |
 | `5` | yellow / yellow | Ethernet clocks and resets completed |
 | `6` | blue / yellow | external MDIO GPIO configured |
@@ -39,71 +52,60 @@ The two physical LEDs are dual-colour. Each code is shown as
 | `E` | blue / white | Ethernet initialization failed |
 | `F` | white / white | at least one Ethernet device is active |
 
-The front panel has 1 WAN and 3 LAN jacks. The stock Linux device tree still
-enumerates QCA8337 PHY addresses 0 through 4; the U-Boot switch count deliberately
-matches that stock MDIO topology rather than the number of visible jacks.
+The front panel has 1 WAN and 3 LAN jacks. The stock Linux device tree exposes
+QCA8337 PHY addresses 0 through 4; the U-Boot switch count intentionally follows
+that MDIO topology.
 
-## First load: stage only
+## Complete one-shot test
 
-Copy only `ra80_stage_ethdiag.ko` to `/tmp`, then verify its SHA-256 against
-`inspection.txt`. On the router, verify the stock vector before loading:
+1. Extract the Actions artifact and verify the SHA-256 for
+   `ra80_ramboot_full.ko` against `inspection.txt`.
+2. Copy only `ra80_ramboot_full.ko` to `/tmp` on the router.
+3. Connect a computer by Ethernet, initially to LAN 1. Set it to
+   `192.168.1.2/24`, with gateway and DNS blank. Disable Wi-Fi and VPN.
+4. On the router, make sure no old stage module is loaded and confirm the stock
+   vector:
+
+   ```sh
+   rmmod ra80_stage_ethdiag 2>/dev/null
+   devmem 0x4a920000 32
+   sha256sum /tmp/ra80_ramboot_full.ko
+   ```
+
+   The vector must be `0xEA0000B8`, and the module hash must exactly match
+   `inspection.txt`. If either check differs, stop and power-cycle.
+
+5. Start the complete RAM-only handoff:
+
+   ```sh
+   sync
+   insmod /tmp/ra80_ramboot_full.ko execute=1
+   ```
+
+   Do not press Reset. A successful handoff disconnects SSH after the guarded
+   three-second delay and automatically starts Webfailsafe.
+
+6. Wait up to 30 seconds. Record the final steady LED colours, then test:
+
+   ```sh
+   ping 192.168.1.1
+   ```
+
+   Open `http://192.168.1.1/` if ping succeeds. If there is no link, try the
+   other two LAN jacks and then WAN without power cycling, recording the LED
+   code for each result.
+
+7. Do not upload or flash anything from the Webfailsafe page during this test.
+   When observations are complete, power-cycle the router. Xiaomi stock Linux
+   should boot normally because NAND/APPSBL was never modified.
+
+If `insmod` returns instead of dropping SSH, do not retry. Save:
 
 ```sh
+dmesg | grep 'ra80_ramboot_full:' | tail -50
 devmem 0x4a920000 32
 ```
 
-It must print `0xEA0000B8`. Then load the module:
-
-```sh
-insmod /tmp/ra80_stage_ethdiag.ko
-dmesg | grep 'ra80_stage_ethdiag:' | tail -30
-devmem 0x4a920000 32
-```
-
-Stop after this first load. A successful stage prints `STAGE VERIFIED`, and the
-first word changes to the value recorded in `inspection.txt`. Do not load an old
-trigger module: its payload length/hash guard belongs to a different U-Boot.
-
-To abort safely without rebooting:
-
-```sh
-rmmod ra80_stage_ethdiag
-dmesg | grep 'ra80_stage_ethdiag:' | tail -10
-devmem 0x4a920000 32
-```
-
-The log must say `stock RAM restored and verified`, and the first word must be
-`0xEA0000B8` again.
-
-## Next diagnostic: opt-in read-only handoff preflight
-
-The preflight is built into `ra80_stage_ethdiag.ko` and is disabled by default.
-It resolves and checks the three previously measured stock-kernel handoff
-symbols and reads the watchdog control register. It does not stop CPUs, write
-the watchdog, or jump. Enable it only while loading a freshly restored stock
-RAM image:
-
-```sh
-devmem 0x4a920000 32
-insmod /tmp/ra80_stage_ethdiag.ko handoff_preflight=1
-dmesg | grep 'ra80_stage_ethdiag:' | tail -30
-devmem 0x4a920000 32
-```
-
-The first `devmem` result must be `0xEA0000B8`. A successful load prints both
-`PREFLIGHT PASS soft=81219980 raw=81219958 smp=8121d0a4` and `STAGE VERIFIED`;
-the second `devmem` result is the staged U-Boot branch word recorded in
-`inspection.txt`. Any symbol mismatch makes `insmod` fail after restoring the
-stock bytes.
-
-After collecting the log, restore the stock RAM immediately:
-
-```sh
-rmmod ra80_stage_ethdiag
-dmesg | grep 'ra80_stage_ethdiag:' | tail -12
-devmem 0x4a920000 32
-```
-
-The log must say `stock RAM restored and verified`, and the final word must be
-`0xEA0000B8`. Do not use any trigger module after this diagnostic; send the
-complete module log and watchdog value for review first.
+On every pre-handoff failure the log should report the reason and, if staging
+had begun, `stock RAM restored and verified`; the vector should be
+`0xEA0000B8`.
