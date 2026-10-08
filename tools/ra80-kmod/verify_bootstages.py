@@ -24,6 +24,12 @@ def verify_source():
         assert 'ra80_entry_pulses' not in source
         assert 'ra80_debug_led_code' not in source
     assert sorted(owners) == sorted(set(definitions) - {'RA80_STAGE_HANDOFF'}), owners
+    runtime_definitions = dict(re.findall(r'^#define (RA80_RT_\w+) (\d+)$', header.read_text(), re.M))
+    assert sorted(map(int, runtime_definitions.values())) == list(range(3, 16))
+    runtime_owners = []
+    for path in ['common/board_r.c', 'common/main.c', 'board/qca/arm/common/board_init.c']:
+        runtime_owners.extend(re.findall(r'ra80_runtime_stage\(\s*(RA80_RT_\w+)', (root/path).read_text()))
+    assert sorted(runtime_owners) == sorted(runtime_definitions), runtime_owners
     module = (root/'tools/ra80-kmod/ra80_ramboot_full.c').read_text()
     assert re.findall(r'ra80_handoff_led\(([^)]*)\);', module[module.index('static int __init ra80_ramboot_full_init'):]) == ['1']
     assert re.search(r'#define RA80_MAX_PAYLOAD_LEN\s+0x000e0000UL', module)
@@ -59,6 +65,7 @@ dtb_base = pgtable + 0x4000 + 4
 gzip_begin = symbol('__dtb_blob_begin') - BASE
 gzip_end = symbol('__dtb_blob_end') - BASE
 assert 0 <= gzip_begin < gzip_end <= len(blob)
+assert BASE + gzip_end <= symbol('__bss_start'), 'compressed FDT would be erased by BSS clearing'
 combined = zlib.decompress(blob[gzip_begin:gzip_end], 16 + zlib.MAX_WBITS)
 assert len(combined) <= 0x40000
 count = struct.unpack_from('<I', combined)[0]
@@ -72,7 +79,8 @@ assert fdt_offset + size <= len(combined)
 copy_size = len(combined) - fdt_offset
 assert dtb_base + copy_size <= LIMIT, 'page table / copied control DTB exceeds reserved RAM'
 
-# Four stackless blocks must emit exactly stages 2,3,4,8, with no branch,
+# General profile emits stages 2,3,4,8; runtime focus emits only reset 2.
+# Stackless blocks must contain no branch,
 # delay, SP/GD/argument clobber or out-of-range store in any block.
 signature = struct.pack('<II', 0xE301A000, 0xE340A101)
 positions = [i for i in range(0, len(blob)-100, 4) if blob[i:i+8] == signature]
@@ -90,13 +98,14 @@ for offset in positions:
         code |= ((output & 2) >> 1) << bit
     assert words[-1] == 0xF57FF04F, 'missing DSB SY'
     codes.append(code)
-assert sorted(codes) == [2, 3, 4, 8], codes
+expected_codes = [2] if 'CONFIG_RA80_RUNTIME_DIAGNOSTICS=y' in config else [2, 3, 4, 8]
+assert sorted(codes) == expected_codes, codes
 reset_word = struct.unpack_from('<I', blob)[0]
 assert reset_word >> 24 == 0xEA
 reset_offset = 8 + ((reset_word & 0xFFFFFF) << 2)
 assert reset_offset == positions[codes.index(2)]
 
-print('PASS: four straight-line ARM blocks; stage codes 2,3,4,8; all 32 TLMM stores verified')
+print('PASS: %d straight-line ARM blocks; stage codes %s; all %d TLMM stores verified' % (len(codes), codes, len(codes)*8))
 print('PASS: no stage delay loops or calls; boot arguments, SP, LR and GD untouched')
 print('payload_end=%08x bss_end=%08x pgtable=%08x dtb_base=%08x dtb_end=%08x' %
       (BASE + len(blob), bss_end, pgtable, dtb_base, dtb_base + copy_size))

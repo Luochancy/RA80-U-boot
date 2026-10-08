@@ -12,6 +12,7 @@
  */
 
 #include <common.h>
+#include <ra80_bootstage.h>
 #include <environment.h>
 #include <asm/arch-qca-common/qca_common.h>
 #include <asm/arch-qca-common/smem.h>
@@ -196,7 +197,9 @@ int board_init(void)
         report_l2err(l2esr);
 #endif
 
+	ra80_runtime_stage(RA80_RT_BOARD);
 	qgic_init();
+	ra80_runtime_stage(RA80_RT_SMEM);
 
 	qca_smem_flash_info_t *sfi = &qca_smem_flash_info;
 
@@ -328,7 +331,9 @@ int board_init(void)
 	 */
 	uart_wait_tx_empty();
 
+	ra80_runtime_stage(RA80_RT_AUTH);
 	update_board_type();
+	ra80_runtime_stage(RA80_RT_BOARD_READY);
 
 	return 0;
 }
@@ -512,6 +517,7 @@ int board_late_init(void)
 
 	qca_smem_flash_info_t *sfi = &qca_smem_flash_info;
 
+	ra80_runtime_stage(RA80_RT_LATE);
 	if (sfi->flash_type != SMEM_BOOT_MMC_FLASH &&
 	    sfi->flash_type != SMEM_BOOT_NO_FLASH) {
 		get_kernel_fs_part_details();
@@ -610,6 +616,7 @@ int board_late_init(void)
 		sdi_disable();
 	}
 
+	ra80_runtime_stage(RA80_RT_LATE_READY);
 	return 0;
 }
 

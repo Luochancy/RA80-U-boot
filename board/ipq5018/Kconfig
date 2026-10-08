@@ -119,6 +119,15 @@ config IPQ5018_PZ_L8
 	help
 		Enable support for ipq5018 pz l8 support
 
+config RA80_RUNTIME_DIAGNOSTICS
+	bool "RA80 fixed LED diagnostics focused on runtime initialization"
+	depends on IPQ5018_XIAOMI_RA80
+	default n
+	help
+	  Keep one reset marker through the already-verified early startup.
+	  Use unique steady LED codes for the runtime cache/malloc/DM/SMEM/
+	  NAND/environment/main-loop boundaries. No diagnostic delay loops.
+
 config IPQ5018_XIAOMI_RA80
 	bool "For Xiaomi AX3000 RA80 V1 support"
 	select 256MB_RAM

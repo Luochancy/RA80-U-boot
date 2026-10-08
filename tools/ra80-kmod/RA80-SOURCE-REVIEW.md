@@ -102,3 +102,27 @@ every GPIO configuration/output store and entry branch, and validates actual
 payload/BSS/page-table/control-FDT bounds. Source stage ownership is checked too.
 Static verification cannot demonstrate physical RAM boot or network reachability.
 A fixed final code from one hardware test is needed to identify the current halt.
+
+## Follow-up: confirmed stop at general stage A
+
+The user confirmed only the white channels of both lamps are on (mixed channels
+look pink). In the d48f4be profile this is stage A, emitted after enable_caches
+returns and before initr_reloc_global_data/malloc/DM/board/storage/environment.
+It is not evidence that board_eth_init or main_loop has been reached. The Windows
+unreachable reply is from the PC 192.168.1.2, not the router.
+
+Source review also rules out a concrete UART TX wait or secondary CPU restart
+loop in the IPQ5018 implementation: these hooks resolve to empty weak defaults.
+SMEM configuration, board authentication SCM, NAND/environment reads and runtime
+allocation/DM remain distinct possible stopping points; none is declared the
+unique cause without finer observations.
+
+CONFIG_RA80_RUNTIME_DIAGNOSTICS enables a separate fixed-code profile. The
+already-observed early path holds code2. Codes3..F uniquely bracket cache return,
+malloc, DM, GIC, SMEM, auth SCM, board ready, NAND, env, late board and main entry.
+This profile preserves the actual startup calls; it does not bypass a suspected
+failure or change PHY/VLAN settings. General network markers are suppressed in
+this build so they cannot overwrite/reuse runtime codes. F means main entry only.
+The binary gate expects one verified ARM reset block for this profile, while the
+general profile retains four blocks. Both profiles check RAM bounds and gzip
+placement before BSS, and every stage definition has one source owner.

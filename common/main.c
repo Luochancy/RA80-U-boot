@@ -90,6 +90,7 @@ void main_loop(void)
 	ra80_ram_test_mode = ra80_ram_test;
 #endif
 	ra80_bootstage(RA80_STAGE_MAIN);
+	ra80_runtime_stage(RA80_RT_MAIN);
 
 	bootstage_mark_name(BOOTSTAGE_ID_MAIN_LOOP, "main_loop");
 

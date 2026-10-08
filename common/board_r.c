@@ -133,6 +133,7 @@ static int initr_caches(void)
 	/* Enable caches */
 	enable_caches();
 	ra80_bootstage(RA80_STAGE_CACHES_READY);
+	ra80_runtime_stage(RA80_RT_CACHES);
 	return 0;
 }
 #endif
@@ -300,10 +301,12 @@ static int initr_malloc(void)
 	debug("Pre-reloc malloc() used %#lx bytes (%ld KB)\n", gd->malloc_ptr,
 	      gd->malloc_ptr / 1024);
 #endif
+	ra80_runtime_stage(RA80_RT_MALLOC);
 	/* The malloc area is immediately below the monitor copy in DRAM */
 	malloc_start = gd->relocaddr - TOTAL_MALLOC_LEN;
 	mem_malloc_init((ulong)map_sysmem(malloc_start, TOTAL_MALLOC_LEN),
 			TOTAL_MALLOC_LEN);
+	ra80_runtime_stage(RA80_RT_MALLOC_READY);
 	return 0;
 }
 
@@ -434,6 +437,7 @@ static int initr_spi(void)
 /* go init the NAND */
 static int initr_nand(void)
 {
+	ra80_runtime_stage(RA80_RT_NAND);
 	puts("NAND:  ");
 	nand_init();
 	return 0;
@@ -492,6 +496,7 @@ static int should_load_env(void)
 
 static int initr_env(void)
 {
+	ra80_runtime_stage(RA80_RT_ENV);
 	/* initialize environment */
 	if (should_load_env())
 		env_relocate();
@@ -503,6 +508,7 @@ static int initr_env(void)
 
 	/* Initialize from environment */
 	load_addr = getenv_ulong("loadaddr", 16, load_addr);
+	ra80_runtime_stage(RA80_RT_ENV_READY);
 #if defined(CONFIG_SYS_EXTBDINFO)
 #if defined(CONFIG_405GP) || defined(CONFIG_405EP)
 #if defined(CONFIG_I2CFAST)
