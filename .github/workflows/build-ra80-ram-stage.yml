@@ -1,4 +1,4 @@
-name: Build RA80 RAM-only LED diagnostic stage
+name: Build RA80 RAM-only full handoff test
 
 on:
   workflow_dispatch:
@@ -36,10 +36,14 @@ jobs:
           test -x ../staging_dir/toolchain-arm_cortex-a7_gcc-5.2.0_musl-1.1.16_eabi/bin/arm-openwrt-linux-gcc
           chmod +x build.sh
           ./build.sh ipq5018_xiaomi_ra80
-          # The elftombn output begins with an ELF container and is intended for
-          # Qualcomm's flash boot flow.  The RAM stage needs U-Boot's flat image,
-          # whose first word is the ARM reset branch validated by bin2c.py.
+          test -s u-boot
           test -s u-boot.bin
+
+          NM="$(find ../staging_dir -type f -name arm-openwrt-linux-nm -print -quit)"
+          test -x "$NM"
+          MAGIC_ADDRESS="$($NM -n u-boot | awk '$3 == "ra80_ramboot_magic" { print "0x" $1; exit }')"
+          test -n "$MAGIC_ADDRESS"
+          printf '%s\n' "$MAGIC_ADDRESS" | tee /tmp/ra80-magic-address.txt
 
       - name: Download matching stock-kernel SDK
         run: |
@@ -49,61 +53,82 @@ jobs:
           mkdir -p /tmp/sdk
           tar -xJf /tmp/sdk.tar.xz -C /tmp/sdk --strip-components=1
 
-      - name: Install generated-payload stage package
+      - name: Install generated-payload module packages
         run: |
           set -euxo pipefail
           PAYLOAD="$GITHUB_WORKSPACE/u-boot.bin"
-          PACKAGE=/tmp/sdk/package/ra80-stage-ethdiag
-          mkdir -p "$PACKAGE/src"
-          python3 tools/ra80-kmod/bin2c.py "$PAYLOAD" "$PACKAGE/src/ra80_payload.inc" --source-commit "$GITHUB_SHA" | tee /tmp/payload-info.txt
-          cp tools/ra80-kmod/OpenWrt.Stage.Makefile "$PACKAGE/Makefile"
-          cp tools/ra80-kmod/ra80_stage_ethdiag.c "$PACKAGE/src/"
-          cp tools/ra80-kmod/Stage.Kbuild "$PACKAGE/src/Makefile"
+          MAGIC_ADDRESS="$(cat /tmp/ra80-magic-address.txt)"
+          python3 tools/ra80-kmod/bin2c.py "$PAYLOAD" /tmp/ra80_payload.inc \
+            --source-commit "$GITHUB_SHA" \
+            --ramboot-magic-address "$MAGIC_ADDRESS" | tee /tmp/payload-info.txt
 
-      - name: Build stage with QSDK 11.4 GCC 5.5 kernel ABI
+          mkdir -p /tmp/sdk/package/ra80-stage-ethdiag/src
+          cp /tmp/ra80_payload.inc /tmp/sdk/package/ra80-stage-ethdiag/src/
+          cp tools/ra80-kmod/OpenWrt.Stage.Makefile /tmp/sdk/package/ra80-stage-ethdiag/Makefile
+          cp tools/ra80-kmod/ra80_stage_ethdiag.c /tmp/sdk/package/ra80-stage-ethdiag/src/
+          cp tools/ra80-kmod/Stage.Kbuild /tmp/sdk/package/ra80-stage-ethdiag/src/Makefile
+
+          mkdir -p /tmp/sdk/package/ra80-ramboot-full/src
+          cp /tmp/ra80_payload.inc /tmp/sdk/package/ra80-ramboot-full/src/
+          cp tools/ra80-kmod/OpenWrt.FullRamboot.Makefile /tmp/sdk/package/ra80-ramboot-full/Makefile
+          cp tools/ra80-kmod/ra80_ramboot_full.c /tmp/sdk/package/ra80-ramboot-full/src/
+          cp tools/ra80-kmod/FullRamboot.Kbuild /tmp/sdk/package/ra80-ramboot-full/src/Makefile
+
+      - name: Build modules with QSDK 11.4 GCC 5.5 kernel ABI
         run: |
           set -euxo pipefail
           cd /tmp/sdk
           make defconfig
-          make package/ra80-stage-ethdiag/compile V=s -j2
+          make package/ra80-stage-ethdiag/compile package/ra80-ramboot-full/compile V=s -j2
 
       - name: Collect and statically verify artifacts
         run: |
           set -euxo pipefail
-          PAYLOAD=u-boot.bin
-          # QSDK keeps the final module in the package staging tree and removes
-          # the temporary Kbuild copy.  Its package pass also removes vermagic,
-          # so kernel release and compiler identity are gated independently.
-          KO="$(find /tmp/sdk/build_dir -type f -name ra80_stage_ethdiag.ko -print -quit)"
-          test -n "$KO"
-          test -s "$KO"
+          STAGE_KO="$(find /tmp/sdk/build_dir -type f -name ra80_stage_ethdiag.ko -print -quit)"
+          FULL_KO="$(find /tmp/sdk/build_dir -type f -name ra80_ramboot_full.ko -print -quit)"
+          test -n "$STAGE_KO"
+          test -s "$STAGE_KO"
+          test -n "$FULL_KO"
+          test -s "$FULL_KO"
+
           KERNEL_TREE="$(find /tmp/sdk/build_dir -type d -path '*/linux-ipq50xx_arm/linux-4.4-qsdk-11.4.0.5' -print -quit)"
           test -n "$KERNEL_TREE"
           grep -Fx '#define UTS_RELEASE "4.4.60"' "$KERNEL_TREE/include/generated/utsrelease.h"
+
           mkdir -p out
-          cp "$KO" out/ra80_stage_ethdiag.ko
-          cp "$PAYLOAD" out/openwrt-ipq5018_xiaomi_ra80-u-boot-leddiag.bin
+          cp "$STAGE_KO" out/ra80_stage_ethdiag.ko
+          cp "$FULL_KO" out/ra80_ramboot_full.ko
+          cp u-boot.bin out/openwrt-ipq5018_xiaomi_ra80-u-boot-leddiag.bin
           cp tools/ra80-kmod/RA80-RAM-STAGE-TESTING.md out/README.md
 
-          readelf -rW "$KO" > /tmp/relocations.txt
-          readelf -SW "$KO" > /tmp/sections.txt
-          readelf -sW "$KO" > /tmp/symbols.txt
-          strings "$KO" > /tmp/module-strings.txt
-          if grep -qw R_ARM_REL32 /tmp/relocations.txt; then
-            echo 'fatal: unsupported R_ARM_REL32 relocation remains in module' >&2
-            exit 1
-          fi
-          grep -F '.core.plt' /tmp/sections.txt
-          grep -F '.init.plt' /tmp/sections.txt
-          grep -Eq 'GCC: .*5\.5\.0' /tmp/module-strings.txt
-          VERMAGIC="$(sed -n 's/^vermagic=//p' /tmp/module-strings.txt | head -n 1)"
+          for MODULE in "$STAGE_KO" "$FULL_KO"; do
+            LABEL="$(basename "$MODULE")"
+            readelf -rW "$MODULE" > "/tmp/${LABEL}.relocations.txt"
+            readelf -SW "$MODULE" > "/tmp/${LABEL}.sections.txt"
+            readelf -sW "$MODULE" > "/tmp/${LABEL}.symbols.txt"
+            strings "$MODULE" > "/tmp/${LABEL}.strings.txt"
+            if grep -qw R_ARM_REL32 "/tmp/${LABEL}.relocations.txt"; then
+              echo "fatal: unsupported R_ARM_REL32 relocation remains in $LABEL" >&2
+              exit 1
+            fi
+            grep -F '.core.plt' "/tmp/${LABEL}.sections.txt"
+            grep -F '.init.plt' "/tmp/${LABEL}.sections.txt"
+            grep -Eq 'GCC: .*5\.5\.0' "/tmp/${LABEL}.strings.txt"
+            if grep ' UND ' "/tmp/${LABEL}.symbols.txt" | grep -Eiq '(mtd|nand|ubi|flash|erase|_soft_restart|smp_send_stop)'; then
+              echo "fatal: forbidden direct flash or handoff import in $LABEL" >&2
+              grep ' UND ' "/tmp/${LABEL}.symbols.txt" | grep -Ei '(mtd|nand|ubi|flash|erase|_soft_restart|smp_send_stop)' >&2
+              exit 1
+            fi
+          done
+
+          grep -F 'RAM ONLY; NO NAND/MTD/APPSBL writes' /tmp/ra80_ramboot_full.ko.strings.txt
+          grep -F 'STAGE VERIFIED AND ARMED' /tmp/ra80_ramboot_full.ko.strings.txt
+          grep -F 'HANDOFF NOW' /tmp/ra80_ramboot_full.ko.strings.txt
+          grep -F 'RAM-only marker accepted; auto-starting Webfailsafe' u-boot.bin
+
+          VERMAGIC="$(sed -n 's/^vermagic=//p' /tmp/ra80_stage_ethdiag.ko.strings.txt | head -n 1)"
           if [[ -n "$VERMAGIC" && "$VERMAGIC" != 4.4.60* ]]; then
             echo "fatal: unexpected module vermagic: $VERMAGIC" >&2
-            exit 1
-          fi
-          if grep ' UND ' /tmp/symbols.txt | grep -Eiq '(mtd|nand|ubi|flash|erase|_soft_restart|smp_send_stop)'; then
-            echo 'fatal: forbidden flash or jump symbol imported by stage module' >&2
-            grep ' UND ' /tmp/symbols.txt | grep -Ei '(mtd|nand|ubi|flash|erase|_soft_restart|smp_send_stop)' >&2
             exit 1
           fi
 
@@ -113,31 +138,31 @@ jobs:
             echo "U-Boot toolchain: OpenWrt GCC 5.2.0"
             echo "Kernel release gate: $(cat "$KERNEL_TREE/include/generated/utsrelease.h")"
             echo "Module vermagic: ${VERMAGIC:-not emitted by this QSDK Kbuild}"
-            echo "Module compiler: $(grep -E 'GCC: .*5\.5\.0' /tmp/module-strings.txt | head -n 1)"
+            echo "Module compiler: $(grep -E 'GCC: .*5\.5\.0' /tmp/ra80_ramboot_full.ko.strings.txt | head -n 1)"
             echo
             cat /tmp/payload-info.txt
             echo
-            sha256sum out/ra80_stage_ethdiag.ko out/openwrt-ipq5018_xiaomi_ra80-u-boot-leddiag.bin
+            sha256sum out/ra80_stage_ethdiag.ko out/ra80_ramboot_full.ko out/openwrt-ipq5018_xiaomi_ra80-u-boot-leddiag.bin
             echo
-            file out/ra80_stage_ethdiag.ko out/openwrt-ipq5018_xiaomi_ra80-u-boot-leddiag.bin
+            file out/ra80_stage_ethdiag.ko out/ra80_ramboot_full.ko out/openwrt-ipq5018_xiaomi_ra80-u-boot-leddiag.bin
             echo
-            echo '--- module metadata ---'
-            strings "$KO" | grep -E '^(vermagic|depends|license|description|author|version)=' || true
+            echo '--- full module metadata ---'
+            strings "$FULL_KO" | grep -E '^(vermagic|depends|license|description|author|version|parm)=' || true
             echo
-            echo '--- module sections ---'
-            cat /tmp/sections.txt
+            echo '--- full module sections ---'
+            cat /tmp/ra80_ramboot_full.ko.sections.txt
             echo
-            echo '--- module relocations ---'
-            cat /tmp/relocations.txt
+            echo '--- full module relocations ---'
+            cat /tmp/ra80_ramboot_full.ko.relocations.txt
             echo
-            echo '--- undefined imports ---'
-            grep ' UND ' /tmp/symbols.txt || true
+            echo '--- full module undefined imports ---'
+            grep ' UND ' /tmp/ra80_ramboot_full.ko.symbols.txt || true
           } | tee out/inspection.txt
 
-      - name: Upload verified RAM-only stage bundle
+      - name: Upload verified RAM-only full test bundle
         uses: actions/upload-artifact@v4
         with:
-          name: RA80-RAM-only-LED-diagnostic-stage
+          name: RA80-RAM-only-full-handoff-test
           path: out/
           if-no-files-found: error
           retention-days: 30
