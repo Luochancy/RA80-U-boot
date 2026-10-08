@@ -170,7 +170,10 @@ extern loff_t board_env_size;
 #define qspi_debug(fmt,args...)
 #endif /* QSPI DEBUG */
 #define CONFIG_PAGE_SCOPE_MULTI_PAGE_READ
+/* RA80 diagnostics must never erase/program a serial-training block. */
+#ifndef CONFIG_IPQ5018_XIAOMI_RA80
 #define CONFIG_QSPI_SERIAL_TRAINING
+#endif
 #define CONFIG_QSPI_LAYOUT_SWITCH
 #endif
 

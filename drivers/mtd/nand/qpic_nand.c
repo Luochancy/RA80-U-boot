@@ -27,6 +27,7 @@
  */
 
 #include <common.h>
+#include <ra80_bootstage.h>
 #include <malloc.h>
 
 #include <asm/io.h>
@@ -1914,7 +1915,7 @@ static void qpic_spi_init(struct mtd_info *mtd)
 
 	val = readl(NAND_QSPI_MSTR_CONFIG);
 
-#if defined(QSPI_IO_MACRO_DEFAULT_CLK_320MHZ) && !defined(CONFIG_QSPI_SERIAL_TRAINING)
+#if defined(QSPI_IO_MACRO_DEFAULT_CLK_320MHZ) && !defined(CONFIG_QSPI_SERIAL_TRAINING) && !defined(CONFIG_IPQ5018_XIAOMI_RA80)
 	default_clk_rate = IO_MACRO_CLK_320_MHZ;
 	val &= ~FB_CLK_BIT;
 #else
@@ -2512,6 +2513,10 @@ qpic_nand_write_page(struct mtd_info *mtd, uint32_t pg_addr,
 	struct cfg_params cfg;
 	int nand_ret = NANDC_RESULT_SUCCESS;
 	unsigned i;
+
+	/* Fail before any program descriptor is queued in a RAM-only handoff. */
+	if (ra80_ram_test_active())
+		return NANDC_RESULT_FAILURE;
 
 	if (cfg_mode == NAND_CFG_RAW) {
 		cfg.cfg0 = dev->cfg0_raw;
@@ -4303,6 +4308,10 @@ nand_result_t qpic_nand_blk_erase(struct mtd_info *mtd, uint32_t page)
 	struct qpic_nand_dev *dev = MTD_QPIC_NAND_DEV(mtd);
 	uint32_t blk_addr = page / (dev->num_pages_per_blk);
 	struct nand_chip *chip = MTD_NAND_CHIP(mtd);
+
+	/* Includes erase requests reached through saveenv or bad-block handling. */
+	if (ra80_ram_test_active())
+		return NANDC_RESULT_FAILURE;
 
 	/* Fill in params for the erase flash cmd */
 	cfg.addr0 = page;

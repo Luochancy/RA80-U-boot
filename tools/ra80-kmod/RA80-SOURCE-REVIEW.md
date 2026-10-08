@@ -126,3 +126,11 @@ this build so they cannot overwrite/reuse runtime codes. F means main entry only
 The binary gate expects one verified ARM reset block for this profile, while the
 general profile retains four blocks. Both profiles check RAM bounds and gzip
 placement before BSS, and every stage definition has one source owner.
+
+## RAM 路径的额外写保护
+
+审查发现 QPIC serial training 会查找0:TRAINING、擦除块并写入校准数据；旧构建含training_block_64，不能仅凭模块没有MTD导入就宣称整条U-Boot路径不会写闪存。此发现不证明用户之前实际发生了擦写：分区缺失、初始化提前停止都可能使它未执行。
+
+RA80目标现已从编译期禁用CONFIG_QSPI_SERIAL_TRAINING，并固定反馈时钟/200MHz输入的保守配置。验证脚本要求链接图无training_block_64且payload无0:TRAINING字符串。
+
+env_import的坏CRC/解密失败原先会自动saveenv。RAM标记现从运行期初始化之前生效，禁止这两条自动保存路径，并在qpic_nand_write_page和qpic_nand_blk_erase排队硬件操作之前拒绝RAM模式写/擦请求。main_loop消费标记后模式继续锁存。正常非RAM启动仍可手动保存环境；RA80自动训练对所有RA80构建均禁用。

@@ -20,14 +20,6 @@
 #endif
 DECLARE_GLOBAL_DATA_PTR;
 
-#ifdef CONFIG_IPQ5018_XIAOMI_RA80
-static int ra80_ram_test_mode;
-int ra80_ram_test_active(void)
-{
-	return ra80_ram_test_mode;
-}
-#endif
-
 #if defined(CONFIG_LWIP_HTTPD) && defined(CONFIG_IPQ5018_XIAOMI_RA80)
 /*
  * A normal image carries the guard value.  The RAM-only Linux handoff module
@@ -38,6 +30,21 @@ int ra80_ram_test_active(void)
 #define RA80_RAMBOOT_MAGIC_GUARD 0x5241382fU
 #define RA80_RAMBOOT_MAGIC_ARMED 0x52413830U
 volatile unsigned int ra80_ramboot_magic = RA80_RAMBOOT_MAGIC_GUARD;
+#endif
+
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+static int ra80_ram_test_mode;
+int ra80_ram_test_active(void)
+{
+	/* The initialized-data marker is valid before NAND/env initialization.
+	 * Keep the mode latched after main_loop consumes that marker. */
+#ifdef CONFIG_LWIP_HTTPD
+	return ra80_ram_test_mode ||
+		ra80_ramboot_magic == RA80_RAMBOOT_MAGIC_ARMED;
+#else
+	return ra80_ram_test_mode;
+#endif
+}
 #endif
 
 /*

@@ -9,6 +9,7 @@
  */
 
 #include <common.h>
+#include <ra80_bootstage.h>
 #include <command.h>
 #include <environment.h>
 #include <linux/stddef.h>
@@ -207,7 +208,8 @@ int env_import(const char *buf, int check)
 
 		if (crc32(0, ep->data, ENV_SIZE) != crc) {
 			set_default_env("!bad CRC");
-			saveenv();
+			if (!ra80_ram_test_active())
+				saveenv();
 			return 0;
 		}
 	}
@@ -217,7 +219,8 @@ int env_import(const char *buf, int check)
 	if (ret) {
 		error("Failed to decrypt env!\n");
 		set_default_env("!import failed");
-		saveenv();
+		if (!ra80_ram_test_active())
+			saveenv();
 		return ret;
 	}
 

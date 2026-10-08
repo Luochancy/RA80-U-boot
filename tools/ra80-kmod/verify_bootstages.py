@@ -33,6 +33,15 @@ def verify_source():
     module = (root/'tools/ra80-kmod/ra80_ramboot_full.c').read_text()
     assert re.findall(r'ra80_handoff_led\(([^)]*)\);', module[module.index('static int __init ra80_ramboot_full_init'):]) == ['1']
     assert re.search(r'#define RA80_MAX_PAYLOAD_LEN\s+0x000e0000UL', module)
+    driver = (root/'drivers/mtd/nand/qpic_nand.c').read_text()
+    assert driver.count('if (ra80_ram_test_active())') == 2
+    environment = (root/'common/env_common.c').read_text()
+    assert re.findall(r'if \(!ra80_ram_test_active\(\)\)\s+saveenv\(\);', environment).__len__() == 2
+    main = (root/'common/main.c').read_text()
+    assert re.search(r'return ra80_ram_test_mode \|\|\s+ra80_ramboot_magic == RA80_RAMBOOT_MAGIC_ARMED;', main)
+    cfg = (root/'include/configs/ipq5018.h').read_text()
+    assert '#ifndef CONFIG_IPQ5018_XIAOMI_RA80\n#define CONFIG_QSPI_SERIAL_TRAINING\n#endif' in cfg
+    print('PASS: RAM marker protects early and late NAND writes; no automatic env save')
     print('PASS: each U-Boot boundary has one stage owner; one fixed Linux handoff code')
 
 verify_source()
@@ -49,6 +58,9 @@ def symbol(name):
     assert len(set(values)) == 1, "ambiguous map symbol: " + name
     return int(values[0], 16)
 
+assert b'training_block_64' not in linkmap.encode(), 'NAND training data compiled into RA80'
+assert b'0:TRAINING' not in blob, 'NAND training partition path compiled into RA80'
+print('PASS: automatic NAND serial-training code/data absent from payload')
 assert len(blob) <= LIMIT - BASE, "payload exceeds reserved window"
 assert symbol('_start') == BASE
 assert symbol('__bss_start') >= BASE
