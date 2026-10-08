@@ -39,9 +39,9 @@ jobs:
           test -s u-boot
           test -s u-boot.bin
 
-          NM="$(find ../staging_dir -type f -name arm-openwrt-linux-nm -print -quit)"
-          test -x "$NM"
-          MAGIC_ADDRESS="$($NM -n u-boot | awk '$3 == "ra80_ramboot_magic" { print "0x" $1; exit }')"
+          test -s u-boot.map
+          # The final ELF is stripped; use the symbol address from its link map.
+          MAGIC_ADDRESS="$(awk '$NF == "ra80_ramboot_magic" { print $(NF - 1); exit }' u-boot.map)"
           test -n "$MAGIC_ADDRESS"
           printf '%s\n' "$MAGIC_ADDRESS" | tee /tmp/ra80-magic-address.txt
 
