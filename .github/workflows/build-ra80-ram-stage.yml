@@ -36,7 +36,10 @@ jobs:
           test -x ../staging_dir/toolchain-arm_cortex-a7_gcc-5.2.0_musl-1.1.16_eabi/bin/arm-openwrt-linux-gcc
           chmod +x build.sh
           ./build.sh ipq5018_xiaomi_ra80
-          test -s bin/openwrt-ipq5018_xiaomi_ra80-u-boot.mbn
+          # The elftombn output begins with an ELF container and is intended for
+          # Qualcomm's flash boot flow.  The RAM stage needs U-Boot's flat image,
+          # whose first word is the ARM reset branch validated by bin2c.py.
+          test -s u-boot.bin
 
       - name: Download matching stock-kernel SDK
         run: |
@@ -49,7 +52,7 @@ jobs:
       - name: Install generated-payload stage package
         run: |
           set -euxo pipefail
-          PAYLOAD="$GITHUB_WORKSPACE/bin/openwrt-ipq5018_xiaomi_ra80-u-boot.mbn"
+          PAYLOAD="$GITHUB_WORKSPACE/u-boot.bin"
           PACKAGE=/tmp/sdk/package/ra80-stage-ethdiag
           mkdir -p "$PACKAGE/src"
           python3 tools/ra80-kmod/bin2c.py "$PAYLOAD" "$PACKAGE/src/ra80_payload.inc" --source-commit "$GITHUB_SHA" | tee /tmp/payload-info.txt
@@ -67,13 +70,13 @@ jobs:
       - name: Collect and statically verify artifacts
         run: |
           set -euxo pipefail
-          PAYLOAD=bin/openwrt-ipq5018_xiaomi_ra80-u-boot.mbn
+          PAYLOAD=u-boot.bin
           KO="$(find /tmp/sdk/build_dir -type f -name ra80_stage_ethdiag.ko -print -quit)"
           test -n "$KO"
           test -s "$KO"
           mkdir -p out
           cp "$KO" out/ra80_stage_ethdiag.ko
-          cp "$PAYLOAD" out/openwrt-ipq5018_xiaomi_ra80-u-boot-leddiag.mbn
+          cp "$PAYLOAD" out/openwrt-ipq5018_xiaomi_ra80-u-boot-leddiag.bin
           cp tools/ra80-kmod/RA80-RAM-STAGE-TESTING.md out/README.md
 
           readelf -rW "$KO" | tee /tmp/relocations.txt
@@ -97,9 +100,9 @@ jobs:
             echo
             cat /tmp/payload-info.txt
             echo
-            sha256sum out/ra80_stage_ethdiag.ko out/openwrt-ipq5018_xiaomi_ra80-u-boot-leddiag.mbn
+            sha256sum out/ra80_stage_ethdiag.ko out/openwrt-ipq5018_xiaomi_ra80-u-boot-leddiag.bin
             echo
-            file out/ra80_stage_ethdiag.ko out/openwrt-ipq5018_xiaomi_ra80-u-boot-leddiag.mbn
+            file out/ra80_stage_ethdiag.ko out/openwrt-ipq5018_xiaomi_ra80-u-boot-leddiag.bin
             echo
             echo '--- module metadata ---'
             strings "$KO" | grep -E '^(vermagic|depends|license|description|author|version)=' || true
