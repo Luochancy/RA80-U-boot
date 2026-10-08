@@ -49,6 +49,9 @@ static int ipq_mdio_wait_busy(void)
 	int i;
 	u32 busy;
 	for (i = 0; i < IPQ_MDIO_RETRY; i++) {
+		/* Allow a wire transaction to finish; a tight CPU loop is not a
+		 * hardware timeout. Also give ACCESS_START time to reach BUSY. */
+		udelay(IPQ_MDIO_DELAY);
 		busy = readl(IPQ_MDIO_BASE +
 			MDIO_CTRL_4_REG) &
 			MDIO_CTRL_4_ACCESS_BUSY;

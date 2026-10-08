@@ -18,6 +18,7 @@
  */
 
 #include <common.h>
+#include <asm-generic/errno.h>
 #include <asm/arch-ipq5018/athrs17_phy.h>
 
 /*
@@ -28,6 +29,24 @@ extern int ipq_mdio_write(int mii_id,
 		int regnum, u16 value);
 extern int ipq_mdio_read(int mii_id,
 		int regnum, ushort *data);
+
+/* Keep the first transport failure through reset and configuration. Never
+ * turn a negative MDIO return into an uninitialized 16-bit register value. */
+static int athrs17_mdio_error;
+static int athrs17_mdio_write(int phy, int reg, uint16_t value)
+{
+	int ret = ipq_mdio_write(phy, reg, value);
+	if (ret < 0 && !athrs17_mdio_error)
+		athrs17_mdio_error = ret;
+	return ret;
+}
+static int athrs17_mdio_read(int phy, int reg, uint16_t *value)
+{
+	int ret = ipq_mdio_read(phy, reg, value);
+	if (ret < 0 && !athrs17_mdio_error)
+		athrs17_mdio_error = ret;
+	return ret;
+}
 
 /******************************************************************************
  * FUNCTION DESCRIPTION: Read switch internal register.
@@ -55,7 +74,9 @@ athrs17_reg_read(uint32_t reg_addr)
 	phy_addr = 0x18;
 	phy_reg = 0x0;
 	phy_val = (uint16_t) ((reg_word_addr >> 8) & 0x1ff);  /* bit16-8 of reg address */
-	ipq_mdio_write(phy_addr, phy_reg, phy_val);
+	if (athrs17_mdio_write(phy_addr, phy_reg, phy_val) < 0)
+		return 0xffffffff;
+	udelay(5); /* QCA83xx MDIO page selection must settle. */
 	/*
 	 * For some registers such as MIBs, since it is read/clear, we should
 	 * read the lower 16-bit register then the higher one
@@ -64,13 +85,15 @@ athrs17_reg_read(uint32_t reg_addr)
 	/* read register in lower address */
 	phy_addr = 0x10 | ((reg_word_addr >> 5) & 0x7); /* bit7-5 of reg address */
 	phy_reg = (uint8_t) (reg_word_addr & 0x1f);   /* bit4-0 of reg address */
-	ipq_mdio_read(phy_addr, phy_reg, &phy_val);
+	if (athrs17_mdio_read(phy_addr, phy_reg, &phy_val) < 0)
+		return 0xffffffff;
 
 	/* read register in higher address */
 	reg_word_addr++;
 	phy_addr = 0x10 | ((reg_word_addr >> 5) & 0x7); /* bit7-5 of reg address */
 	phy_reg = (uint8_t) (reg_word_addr & 0x1f);   /* bit4-0 of reg address */
-	ipq_mdio_read(phy_addr, phy_reg, &tmp_val);
+	if (athrs17_mdio_read(phy_addr, phy_reg, &tmp_val) < 0)
+		return 0xffffffff;
 	reg_val = (tmp_val << 16 | phy_val);
 
 	return reg_val;
@@ -101,7 +124,9 @@ athrs17_reg_write(uint32_t reg_addr, uint32_t reg_val)
 	phy_addr = 0x18;
 	phy_reg = 0x0;
 	phy_val = (uint16_t) ((reg_word_addr >> 8) & 0x1ff);  /* bit16-8 of reg address */
-	ipq_mdio_write(phy_addr, phy_reg, phy_val);
+	if (athrs17_mdio_write(phy_addr, phy_reg, phy_val) < 0)
+		return;
+	udelay(5);
 
 	/*
 	 * For some registers such as ARL and VLAN, since they include BUSY bit
@@ -114,14 +139,15 @@ athrs17_reg_write(uint32_t reg_addr, uint32_t reg_val)
 	phy_addr = 0x10 | ((reg_word_addr >> 5) & 0x7); /* bit7-5 of reg address */
 	phy_reg = (uint8_t) (reg_word_addr & 0x1f);   /* bit4-0 of reg address */
 	phy_val = (uint16_t) ((reg_val >> 16) & 0xffff);
-	ipq_mdio_write(phy_addr, phy_reg, phy_val);
+	if (athrs17_mdio_write(phy_addr, phy_reg, phy_val) < 0)
+		return;
 
 	/* write register in lower address */
 	reg_word_addr--;
 	phy_addr = 0x10 | ((reg_word_addr >> 5) & 0x7); /* bit7-5 of reg address */
 	phy_reg = (uint8_t) (reg_word_addr & 0x1f);   /* bit4-0 of reg address */
 	phy_val = (uint16_t) (reg_val & 0xffff);
-	ipq_mdio_write(phy_addr, phy_reg, phy_val);
+	athrs17_mdio_write(phy_addr, phy_reg, phy_val);
 }
 
 /*********************************************************************
@@ -164,31 +190,32 @@ void athrs17_vlan_config(void)
 int athrs17_init_switch(void)
 {
 	uint32_t data;
-	uint32_t i = 0;
+	unsigned int i;
 
-	/* Reset the switch before initialization */
+	athrs17_mdio_error = 0;
 	athrs17_reg_write(S17_MASK_CTRL_REG, S17_MASK_CTRL_SOFT_RET);
-	do {
-		udelay(10);
+	if (athrs17_mdio_error)
+		return athrs17_mdio_error;
+	/* Bounded millisecond polling, including success on the final sample. */
+	for (i = 0; i < 1000; ++i) {
+		udelay(1000);
 		data = athrs17_reg_read(S17_MASK_CTRL_REG);
-		i++;
-		if (i == 10){
-			printf("QCA_8337: Failed to reset\n");
-			return -1;
-		}
-	} while (data & S17_MASK_CTRL_SOFT_RET);
-
-	i = 0;
-
-	do {
-		udelay(10);
+		if (athrs17_mdio_error)
+			return athrs17_mdio_error;
+		if (!(data & S17_MASK_CTRL_SOFT_RET))
+			break;
+	}
+	if (i == 1000)
+		return -ETIMEDOUT;
+	for (i = 0; i < 1000; ++i) {
+		udelay(1000);
 		data = athrs17_reg_read(S17_GLOBAL_INT0_REG);
-		i++;
-		if (i == 10)
-			return -1;
-	} while ((data & S17_GLOBAL_INITIALIZED_STATUS) != S17_GLOBAL_INITIALIZED_STATUS);
-
-	return 0;
+		if (athrs17_mdio_error)
+			return athrs17_mdio_error;
+		if ((data & S17_GLOBAL_INITIALIZED_STATUS) == S17_GLOBAL_INITIALIZED_STATUS)
+			return 0;
+	}
+	return -ETIMEDOUT;
 }
 
 /*********************************************************************
@@ -317,10 +344,12 @@ int ipq_athrs17_init(ipq_gmac_board_cfg_t *gmac_cfg)
 		return -1;
 
 	ret = athrs17_init_switch();
-	if (ret != -1) {
+	if (ret == 0) {
 		athrs17_reg_init(gmac_cfg);
 		athrs17_reg_init_lan(gmac_cfg);
 		athrs17_vlan_config();
+		if (athrs17_mdio_error)
+			return athrs17_mdio_error;
 		printf ("S17c init  done\n");
 	}
 

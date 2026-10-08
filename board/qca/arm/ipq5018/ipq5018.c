@@ -762,6 +762,11 @@ static void set_ext_mdio_gpio(int node)
 	unsigned int mdio_gpio[2] = {0};
 	int status = -1;
 	unsigned int *mdio_gpio_base;
+	unsigned int pin_cfg = 0x7;
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+	/* Stock DTB: MDIO function 1, pull-up, drive strength 8 mA. */
+	pin_cfg = 0xc7;
+#endif
 
 	status = fdtdec_get_int_array(gd->fdt_blob,
 					node,
@@ -772,11 +777,11 @@ static void set_ext_mdio_gpio(int node)
 		/*  mdc  */
 		mdio_gpio_base =
 			(unsigned int *)GPIO_CONFIG_ADDR(mdio_gpio[0]);
-		writel(0x7, mdio_gpio_base);
+		writel(pin_cfg, mdio_gpio_base);
 		/*  mdio */
 		mdio_gpio_base =
 			(unsigned int *)GPIO_CONFIG_ADDR(mdio_gpio[1]);
-		writel(0x7, mdio_gpio_base);
+		writel(pin_cfg, mdio_gpio_base);
 	}
 }
 
@@ -826,6 +831,9 @@ static void reset_s17c_switch_gpio(int gpio)
 	writel(0x0, GPIO_IN_OUT_ADDR(gpio));
 	mdelay(500);
 	writel(0x2, GPIO_IN_OUT_ADDR(gpio));
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+	mdelay(100); /* Let the switch leave hardware reset before MDIO. */
+#endif
 }
 
 static void cmn_blk_clk_set(void)

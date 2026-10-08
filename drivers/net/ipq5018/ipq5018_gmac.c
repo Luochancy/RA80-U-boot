@@ -632,8 +632,63 @@ static void ipq_eth_halt(struct eth_device *dev)
 	ipq_mac_reset(dev);
 }
 
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+static int ra80_switch_debug_clear(int phy, unsigned int address, unsigned int mask)
+{
+	int value;
+	/* These are indirect debug addresses, not Clause 22 register numbers. */
+	if (ipq_mdio_write(phy, 0x1d, address) < 0)
+		return -EIO;
+	value = ipq_mdio_read(phy, 0x1e, NULL);
+	if (value < 0 || value == 0xffff)
+		return -EIO;
+	return ipq_mdio_write(phy, 0x1e, value & ~mask);
+}
+
+static int ra80_switch_init(ipq_gmac_board_cfg_t *cfg)
+{
+	unsigned int elapsed;
+	int port, phy, value, pending;
+	for (port = 0; port < cfg->switch_port_count; ++port) {
+		phy = cfg->switch_port_phy_address[port];
+		if (ipq_mdio_write(phy, MII_BMCR, BMCR_PDOWN) < 0 ||
+		    ra80_switch_debug_clear(phy, 0x3d, 0x0040) < 0 ||
+		    ra80_switch_debug_clear(phy, 0x0b, 0x2400) < 0)
+			return 0;
+	}
+	if (ipq_athrs17_init(cfg) != 0)
+		return 0;
+	for (port = 0; port < cfg->switch_port_count; ++port) {
+		phy = cfg->switch_port_phy_address[port];
+		if (ipq_mdio_write(phy, MII_ADVERTISE,
+			ADVERTISE_ALL | ADVERTISE_PAUSE_CAP | ADVERTISE_PAUSE_ASYM) < 0 ||
+		    ipq_mdio_write(phy, MII_CTRL1000, 0x0400 | ADVERTISE_1000FULL) < 0 ||
+		    ipq_mdio_write(phy, MII_BMCR, BMCR_RESET | BMCR_ANENABLE) < 0)
+			return 0;
+	}
+	/* BMCR reset completion precedes normal PHY/link reads. */
+	for (elapsed = 0; elapsed < 600; elapsed += 20) {
+		mdelay(20);
+		pending = 0;
+		for (port = 0; port < cfg->switch_port_count; ++port) {
+			phy = cfg->switch_port_phy_address[port];
+			value = ipq_mdio_read(phy, MII_BMCR, NULL);
+			if (value < 0 || value == 0xffff)
+				return 0;
+			pending |= value & BMCR_RESET;
+		}
+		if (!pending)
+			return 1;
+	}
+	return 0;
+}
+#endif
+
 static int QCA8337_switch_init(ipq_gmac_board_cfg_t *gmac_cfg)
 {
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+	return ra80_switch_init(gmac_cfg);
+#else
 	for (int port = 0;
 		port < gmac_cfg->switch_port_count;
 		++port) {
@@ -699,6 +754,7 @@ static int QCA8337_switch_init(ipq_gmac_board_cfg_t *gmac_cfg)
 		mdelay(100);
 	}
 	return 1;
+#endif
 }
 
 static void gephy_mdac_edac_config(ipq_gmac_board_cfg_t *gmac_cfg)
@@ -858,6 +914,12 @@ int ipq_gmac_init(ipq_gmac_board_cfg_t *gmac_cfg)
 					NULL);
 			phy_chip_id = (phy_chip_id1 << 16) | phy_chip_id2;
 		}
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+		/* Stock DTB fixes this GMAC to the external QCA83xx switch. Its
+		 * setup must not disappear when the first PHY ID read times out. */
+		if (gmac_cfg->ipq_swith)
+			phy_chip_id = QCA_8337;
+#endif
 		switch(phy_chip_id) {
 #ifdef CONFIG_QCA8081_PHY
 			/* NAPA PHY For GMAC1 */

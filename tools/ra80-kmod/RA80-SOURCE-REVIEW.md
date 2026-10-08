@@ -1,5 +1,48 @@
 # RA80 RAM-only startup-path review
 
+## Steady C follow-up (after direct RAM entry)
+
+The user reached C with the direct-network payload. C is emitted after
+ipq5018_phy_link_update returns, before testing its result; D is emitted inside
+DMA reset. A steady C establishes at least one PHY update return and no observed
+DMA-reset entry. It does not distinguish no cable from failed MDIO, missing PHY
+callbacks, or failed external-switch initialization. The furthest-stage latch
+can also hide where a later retry is currently executing.
+
+Source defects corrected in this revision:
+
+- Common MDIO had 1000 tight reads with no delay, despite IPQ_MDIO_DELAY=5.
+  It now allows 5 us before each sample, a bounded nominal 5 ms wait plus MMIO
+  overhead, accepting completion on the last sample.
+- S17 switch reset and global initialization allowed only ten polls separated
+  by 10 us and rejected the tenth even if ready. Both phases now accept final
+  completion and allow 1000 polls separated by 1 ms. Transport errors propagate
+  through paging, both halves of register access, reset, and configuration.
+  Page selection receives a 5 us settling delay.
+- RA80 QCA8337 setup incorrectly accessed debug addresses 0x3d and 0x0b as
+  Clause 22 register numbers. They now use address/data registers 0x1d/0x1e.
+  Every setup transaction is checked; PHY BMCR reset is polled for at most
+  600 ms of explicit delays before link reads.
+- For RA80's DT-declared external switch, an invalid first PHY ID no longer
+  bypasses switch initialization altogether. This is restricted to RA80 and
+  still requires successful switch transport/reset/configuration before the
+  initialized flag is set. Other targets retain their original selection.
+- External MDIO GPIO36/37 now use 8 mA drive with pull-up/function 1, matching
+  the supplied stock DTB. GPIO26 gets 100 ms after reset deassertion before
+  subsequent MDIO access.
+
+Primary reference for indirect debug addressing and page settling:
+https://github.com/openwrt/openwrt/blob/master/target/linux/generic/files/drivers/net/phy/ar8216.h
+https://github.com/openwrt/openwrt/blob/master/target/linux/generic/files/drivers/net/phy/ar8216.c
+Its PHY initialization uses millisecond reset polling; the S17 switch-core
+timeout here is a conservative bounded policy, not a claimed datasheet value.
+The new test_switch_init.py extracts production functions and injects late
+completion, final-sample success, permanent busy and read/write failures.
+These are proven source defects; which contributed to this router's C remains
+unconfirmed until the new payload is tested. Network packet delivery is not
+established by host tests, LED progress or carrier alone. All NAND/RAM guards
+and all sixteen physical lamp codes remain unchanged.
+
 Baseline: xiaomi-ra80 506331c4e6d345b40a3b3cad4a3b79a67ba46320.
 Evidence: stock RA80-V1 DTB, successful reversible stage/restore log, calibrated
 GPIO17/19/20/22, and the user's counted-entry observations with no network access.
