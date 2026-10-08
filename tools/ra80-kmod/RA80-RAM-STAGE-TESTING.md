@@ -74,3 +74,36 @@ devmem 0x4a920000 32
 
 The log must say `stock RAM restored and verified`, and the first word must be
 `0xEA0000B8` again.
+
+## Next diagnostic: opt-in read-only handoff preflight
+
+The preflight is built into `ra80_stage_ethdiag.ko` and is disabled by default.
+It resolves and checks the three previously measured stock-kernel handoff
+symbols and reads the watchdog control register. It does not stop CPUs, write
+the watchdog, or jump. Enable it only while loading a freshly restored stock
+RAM image:
+
+```sh
+devmem 0x4a920000 32
+insmod /tmp/ra80_stage_ethdiag.ko handoff_preflight=1
+dmesg | grep 'ra80_stage_ethdiag:' | tail -30
+devmem 0x4a920000 32
+```
+
+The first `devmem` result must be `0xEA0000B8`. A successful load prints both
+`PREFLIGHT PASS soft=81219980 raw=81219958 smp=8121d0a4` and `STAGE VERIFIED`;
+the second `devmem` result is the staged U-Boot branch word recorded in
+`inspection.txt`. Any symbol mismatch makes `insmod` fail after restoring the
+stock bytes.
+
+After collecting the log, restore the stock RAM immediately:
+
+```sh
+rmmod ra80_stage_ethdiag
+dmesg | grep 'ra80_stage_ethdiag:' | tail -12
+devmem 0x4a920000 32
+```
+
+The log must say `stock RAM restored and verified`, and the final word must be
+`0xEA0000B8`. Do not use any trigger module after this diagnostic; send the
+complete module log and watchdog value for review first.
