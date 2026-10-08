@@ -15,6 +15,7 @@
 
 #include <asm-offsets.h>
 #include <config.h>
+#include <ra80_bootstage.h>
 #include <asm/system.h>
 #include <linux/linkage.h>
 
@@ -32,59 +33,14 @@
 	.globl	save_boot_params_ret
 
 
-#ifdef CONFIG_IPQ5018_XIAOMI_RA80
-/* No stack, calls, literal pools or r0-r3 changes before save_boot_params.
- * TLMM layout matches ipq5018.h; LEDs are active high. */
-.macro ra80_entry_led sy, sb, ny, nb, dwell=0x08000000
-	movw r4, #0x1000
-	movt r4, #0x0101
-	movw r5, #0x2c1
-	movt r5, #0
-	str r5, [r4]
-	mov r6, #\sy
-	str r6, [r4, #4]
-	movw r4, #0x3000
-	movt r4, #0x0101
-	str r5, [r4]
-	mov r6, #\sb
-	str r6, [r4, #4]
-	movw r4, #0x4000
-	movt r4, #0x0101
-	str r5, [r4]
-	mov r6, #\ny
-	str r6, [r4, #4]
-	movw r4, #0x6000
-	movt r4, #0x0101
-	str r5, [r4]
-	mov r6, #\nb
-	str r6, [r4, #4]
-	dsb sy
-	/* Visible dwell; not a calibrated time source. */
-	mov r6, #\dwell
-991:	subs r6, r6, #1
-	bne 991b
-.endm
-/* Counted pulses use only System (lamp 2); Internet remains off.
- * Assembly-time repetition needs no stack or runtime counter register. */
-.macro ra80_entry_pulses count, sy, sb
-	.rept \count
-	ra80_entry_led \sy, \sb, 0, 0
-	ra80_entry_led 0, 0, 0, 0
-	.endr
-	ra80_entry_led \sy, \sb, 0, 0, 0x10000000
-.endm
-#endif
 
 reset:
 #ifdef CONFIG_IPQ5018_XIAOMI_RA80
-	ra80_entry_pulses 1, 2, 0
+	ra80_stage RA80_STAGE_RESET
 #endif
 	/* Allow the board to save important registers */
 	b	save_boot_params
 save_boot_params_ret:
-#ifdef CONFIG_IPQ5018_XIAOMI_RA80
-	ra80_entry_pulses 2, 0, 2
-#endif
 	/*
 	 * disable interrupts (FIQ and IRQ), also set the cpu to SVC32 mode,
 	 * except if in HYP mode already
@@ -129,9 +85,6 @@ save_boot_params_ret:
 #endif
 
 
-#ifdef CONFIG_IPQ5018_XIAOMI_RA80
-	ra80_entry_pulses 3, 2, 0
-#endif
 	bl	_main
 
 /*------------------------------------------------------------------------------*/

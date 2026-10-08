@@ -8,6 +8,7 @@
 /* #define	DEBUG	*/
 
 #include <common.h>
+#include <ra80_bootstage.h>
 #include <autoboot.h>
 #include <cli.h>
 #include <console.h>
@@ -18,6 +19,14 @@
 #include <ipq_api.h>
 #endif
 DECLARE_GLOBAL_DATA_PTR;
+
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+static int ra80_ram_test_mode;
+int ra80_ram_test_active(void)
+{
+	return ra80_ram_test_mode;
+}
+#endif
 
 #if defined(CONFIG_LWIP_HTTPD) && defined(CONFIG_IPQ5018_XIAOMI_RA80)
 /*
@@ -75,6 +84,12 @@ static void run_preboot_environment_command(void)
 void main_loop(void)
 {
 	const char *s = NULL;
+	int ra80_ram_test = 0;
+#if defined(CONFIG_LWIP_HTTPD) && defined(CONFIG_IPQ5018_XIAOMI_RA80)
+	ra80_ram_test = ra80_ramboot_magic == RA80_RAMBOOT_MAGIC_ARMED;
+	ra80_ram_test_mode = ra80_ram_test;
+#endif
+	ra80_bootstage(RA80_STAGE_MAIN);
 
 	bootstage_mark_name(BOOTSTAGE_ID_MAIN_LOOP, "main_loop");
 
@@ -94,11 +109,13 @@ void main_loop(void)
 	cli_init();
 
 #ifndef CONFIG_REDUCE_FOOTPRINT
-	run_preboot_environment_command();
+	if (!ra80_ram_test)
+		run_preboot_environment_command();
 #endif
 
 #if defined(CONFIG_UPDATE_TFTP)
-	update_tftp(0UL, NULL, NULL);
+	if (!ra80_ram_test)
+		update_tftp(0UL, NULL, NULL);
 #endif /* CONFIG_UPDATE_TFTP */
 
 #ifdef CONFIG_LWIP_HTTPD
@@ -106,7 +123,6 @@ void main_loop(void)
 	if (ra80_ramboot_magic == RA80_RAMBOOT_MAGIC_ARMED) {
 		ra80_ramboot_magic = RA80_RAMBOOT_MAGIC_GUARD;
 		printf("RA80DBG: RAM-only marker accepted; auto-starting Webfailsafe\n");
-		ra80_debug_led_code(0x2);
 #ifndef CONFIG_IPQ40XX
 		/* RAM test: ignore stale environment interface preferences.
 		 * This changes RAM environment only; never saveenv. */
@@ -116,7 +132,11 @@ void main_loop(void)
 		printf("RA80DBG: RAM test ethernet rotation enabled; no fixed device\n");
 		eth_initialize();
 #endif
-		run_command("httpd", 0);
+		ra80_bootstage(RA80_STAGE_LINK);
+		if (run_command("httpd", 0) || !webfailsafe_is_running) {
+			puts("RA80DBG: RAM HTTP start failed; automatic boot suppressed\n");
+			hang();
+		}
 	} else
 #endif
 	{
@@ -129,14 +149,15 @@ void main_loop(void)
 		printf("##Using 'config_name=%s' from environment variable\n", env_config);
 	}
 #endif
-	s = bootdelay_process();
+	if (!ra80_ram_test)
+		s = bootdelay_process();
 #ifndef CONFIG_REDUCE_FOOTPRINT
-	if (cli_process_fdt(&s))
+	if (!ra80_ram_test && cli_process_fdt(&s))
 		cli_secure_boot_cmd(s);
 #endif
 
 #ifdef CONFIG_LWIP_HTTPD
-	if (!webfailsafe_is_running)
+	if (!ra80_ram_test && !webfailsafe_is_running)
 #endif
 	autoboot_command(s);
 

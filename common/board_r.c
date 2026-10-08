@@ -11,6 +11,7 @@
  */
 
 #include <common.h>
+#include <ra80_bootstage.h>
 /* TODO: can we just include all these headers whether needed or not? */
 #if defined(CONFIG_CMD_BEDBUG)
 #include <bedbug/type.h>
@@ -131,6 +132,7 @@ static int initr_caches(void)
 {
 	/* Enable caches */
 	enable_caches();
+	ra80_bootstage(RA80_STAGE_CACHES_READY);
 	return 0;
 }
 #endif
@@ -981,6 +983,7 @@ void board_init_r(gd_t *new_gd, ulong dest_addr)
 #ifdef CONFIG_NEEDS_MANUAL_RELOC
 	int i;
 #endif
+	ra80_bootstage(RA80_STAGE_RUNTIME);
 
 #ifdef CONFIG_AVR32
 	mmu_init_r(dest_addr);

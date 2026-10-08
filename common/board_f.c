@@ -11,6 +11,7 @@
  */
 
 #include <common.h>
+#include <ra80_bootstage.h>
 #include <linux/compiler.h>
 #include <version.h>
 #include <console.h>
@@ -843,6 +844,12 @@ __weak int arch_cpu_init_dm(void)
 	return 0;
 }
 
+static int ra80_console_ready(void)
+{
+	ra80_bootstage(RA80_STAGE_CONSOLE);
+	return 0;
+}
+
 static init_fnc_t init_sequence_f[] = {
 #ifdef CONFIG_SANDBOX
 	setup_ram_buf,
@@ -910,6 +917,7 @@ static init_fnc_t init_sequence_f[] = {
 	init_baud_rate,		/* initialze baudrate settings */
 	serial_init,		/* serial communications setup */
 	console_init_f,		/* stage 1 init of console */
+	ra80_console_ready,
 #ifdef CONFIG_SANDBOX
 	sandbox_early_getopt_check,
 #endif

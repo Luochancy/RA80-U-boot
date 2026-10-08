@@ -5,6 +5,7 @@
  */
 
 #include <common.h>
+#include <ra80_bootstage.h>
 #include <command.h>
 #include <net.h>
 #include <asm/byteorder.h>
@@ -135,6 +136,10 @@ static const char *fw_type_to_string(int fw_type) {
 }
 
 int do_http_upgrade(const ulong size, const int upgrade_type) {
+	if (ra80_ram_test_active()) {
+		puts("RA80DBG: upgrade disabled in RAM-only diagnostic mode\n");
+		return -1;
+	}
 	printChecksumMd5(UPLOAD_ADDR, size);
 	do_http_progress(WEBFAILSAFE_PROGRESS_UPGRADING);
 	switch (upgrade_type) {
@@ -682,11 +687,14 @@ static int do_initramfs_boot(const ulong size) {
 }
 
 int do_http_progress(const int state) {
+	/* Preserve the final fixed stage even if a client attempts an upload. */
+	if (ra80_ram_test_active() && state != WEBFAILSAFE_PROGRESS_START)
+		return 0;
 	switch (state) {
 		case WEBFAILSAFE_PROGRESS_START:
+			ra80_bootstage(RA80_STAGE_HTTP);
 #ifdef CONFIG_IPQ5018_XIAOMI_RA80
-			/* 0xa: Ethernet is active and Webfailsafe is genuinely ready. */
-			ra80_debug_led_code(0xa);
+
 #elif defined(CONFIG_IPQ807X_ALIYUN_AP8220)
 			led_on("power_led");
 #else

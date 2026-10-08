@@ -96,10 +96,17 @@ jobs:
           grep -Fx '#define UTS_RELEASE "4.4.60"' "$KERNEL_TREE/include/generated/utsrelease.h"
 
           mkdir -p out
+          python3 tools/ra80-kmod/verify_bootstages.py u-boot.bin u-boot.map | tee out/bootstage-verification.txt
+          cp u-boot.map out/
+          cp .config out/uboot.config
+          cp tools/ra80-kmod/RA80-SOURCE-REVIEW.md out/
+          cp tools/ra80-kmod/verify_bootstages.py out/
           cp "$STAGE_KO" out/ra80_stage_ethdiag.ko
           cp "$FULL_KO" out/ra80_ramboot_full.ko
           cp u-boot.bin out/openwrt-ipq5018_xiaomi_ra80-u-boot-leddiag.bin
           cp tools/ra80-kmod/RA80-RAM-STAGE-TESTING.md out/README.md
+          md5sum out/ra80_ramboot_full.ko out/ra80_stage_ethdiag.ko > out/MD5SUMS
+          sha256sum out/ra80_ramboot_full.ko out/ra80_stage_ethdiag.ko out/openwrt-ipq5018_xiaomi_ra80-u-boot-leddiag.bin > out/SHA256SUMS
 
           for MODULE in "$STAGE_KO" "$FULL_KO"; do
             LABEL="$(basename "$MODULE")"

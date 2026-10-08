@@ -21,7 +21,7 @@
 #define RA80_UBOOT_PHYS                 0x4a920000UL
 #define RA80_WATCHDOG_CTRL_PHYS         0x0b017008UL
 #define RA80_MIN_PAYLOAD_LEN            (64UL * 1024UL)
-#define RA80_MAX_PAYLOAD_LEN            (2UL * 1024UL * 1024UL)
+#define RA80_MAX_PAYLOAD_LEN            0x000e0000UL
 #define RA80_STOCK_VECTOR0              0xea0000b8U
 #define RA80_VECTOR_LITERAL             0xe59ff014U
 #define RA80_EXPECTED_SOFT_RESTART      0x81219980UL
@@ -371,13 +371,8 @@ static int __init ra80_ramboot_full_init(void)
 		}
 		ra80_led_saved = true;
 	}
-	/* Separate Linux preparation from the U-Boot reset entry visually. */
-	ra80_handoff_led(0);
-	msleep(500);
-	ra80_handoff_led(4); /* system off, network yellow */
-	msleep(1000);
-	ra80_handoff_led(8); /* system off, network blue */
-	pr_emerg("ra80_ramboot_full: LED DIAG Linux countdown network blue\n");
+	/* One fixed handoff code; never blink or reuse U-Boot stages. */
+	ra80_handoff_led(1);
 	remaining = delay_ms;
 	while (remaining > 0) {
 		unsigned int slice = remaining > 1000 ? 1000 : remaining;
@@ -403,9 +398,7 @@ static int __init ra80_ramboot_full_init(void)
 	jump_to_ram = (ra80_raw_restart_fn_t)raw_restart;
 	pr_emerg("ra80_ramboot_full: HANDOFF NOW entry=%08lx watchdog=0\n",
 		 RA80_UBOOT_PHYS);
-	ra80_handoff_led(0xc); /* system off, network white: before SMP stop */
 	stop_secondary();
-	ra80_handoff_led(0x4); /* Internet yellow only: SMP stop returned, raw restart next */
 	writel(0, ra80_watchdog_map);
 	mb();
 	jump_to_ram(RA80_UBOOT_PHYS, true);

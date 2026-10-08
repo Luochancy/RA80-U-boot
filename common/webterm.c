@@ -4,6 +4,7 @@
  */
 
 #include <common.h>
+#include <ra80_bootstage.h>
 #include <malloc.h>
 #include <command.h>
 #include "../failsafe/failsafe_httpd.h"
@@ -153,6 +154,10 @@ int webterm_get_output(char *buf, int size, int since) {
 }
 
 void webterm_execute_command(const char *cmd) {
+	if (ra80_ram_test_active()) {
+		webterm_capture_output("Commands disabled in RAM-only diagnostic mode\n");
+		return;
+	}
 	webterm_abort_requested = 0;
 	snprintf(webterm_output_buf, WEBTERM_BUFFER_SIZE, "> %s\n", cmd);
 	webterm_capture_output(webterm_output_buf);
@@ -167,6 +172,10 @@ void webterm_execute_command(const char *cmd) {
 }
 
 int webterm_run_pending_command(void) {
+	if (ra80_ram_test_active()) {
+		webterm_has_pending_cmd = 0;
+		return 0;
+	}
 	if (!webterm_has_pending_cmd)
 		return 0;
 	webterm_has_pending_cmd = 0;

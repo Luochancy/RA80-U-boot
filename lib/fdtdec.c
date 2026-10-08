@@ -5,6 +5,7 @@
 
 #ifndef USE_HOSTCC
 #include <common.h>
+#include <ra80_bootstage.h>
 #include <errno.h>
 #include <serial.h>
 #include <libfdt.h>
@@ -1340,6 +1341,8 @@ static int parse_combined_fdt(unsigned long machid)
 int fdtdec_setup(void)
 {
 	unsigned int machid;
+	int ret;
+	ra80_bootstage(RA80_STAGE_FDT);
 #if CONFIG_IS_ENABLED(OF_CONTROL)
 # ifdef CONFIG_OF_EMBED
 	/* Get a pointer to the FDT */
@@ -1373,7 +1376,10 @@ int fdtdec_setup(void)
 						(uintptr_t)gd->fdt_blob);
 # endif
 #endif
-	return fdtdec_prepare_fdt();
+	ret = fdtdec_prepare_fdt();
+	if (!ret)
+		ra80_bootstage(RA80_STAGE_FDT_READY);
+	return ret;
 }
 
 #endif /* !USE_HOSTCC */

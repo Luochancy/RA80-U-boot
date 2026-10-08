@@ -7,6 +7,7 @@
  */
 
 #include <config.h>
+#include <ra80_bootstage.h>
 #include <asm-offsets.h>
 #include <linux/linkage.h>
 #ifdef CONFIG_CPU_V7M
@@ -65,6 +66,7 @@
  */
 
 ENTRY(_main)
+	ra80_stage RA80_STAGE_CRT0
 
 /*
  * Set up initial C runtime environment and call board_init_f(0).
@@ -85,6 +87,7 @@ ENTRY(_main)
 	mov	r0, sp
 	bl	board_init_f_mem
 	mov	sp, r0
+	ra80_stage RA80_STAGE_GD
 
 #if defined(CONFIG_IPQ_NO_RELOC)
 	ldr	r0, =__bss_start	/* this is auto-relocated! */
@@ -110,6 +113,7 @@ clbss_l:cmp	r0, r1			/* while not at end of BSS */
 #endif /* CONFIG_ARCH_IPQ807x clear bss */
 	mov	r0, #0
 	bl	board_init_f
+	ra80_stage RA80_STAGE_RELOC
 
 #if ! defined(CONFIG_SPL_BUILD)
 

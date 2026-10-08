@@ -1,4 +1,5 @@
 #include <common.h>
+#include <ra80_bootstage.h>
 #include <ipq_api.h>
 #include <asm/gpio.h>
 #include <fdtdec.h>
@@ -85,34 +86,6 @@ void led_off(const char *gpio_name) {
 	gpio_set_value(gpio, 0);
 }
 
-/*
- * RA80 V1 no-UART boot diagnostics.
- *
- * Front-panel dual-colour LEDs are encoded as a four-bit stage value:
- *   bit0 GPIO17 system-yellow, bit1 GPIO19 system-blue,
- *   bit2 GPIO20 network-yellow, bit3 GPIO22 network-blue.
- */
-void ra80_debug_led_code(unsigned int code)
-{
-#ifdef CONFIG_IPQ5018_XIAOMI_RA80
-	static const char * const names[4] = {
-		"power_led", "blink_led", "network_yellow_led", "system_led"
-	};
-	int i;
-
-	code &= 0xf;
-	for (i = 0; i < 4; i++) {
-		if (code & (1U << i))
-			led_on(names[i]);
-		else
-			led_off(names[i]);
-	}
-	printf("RA80DBG: LED code=0x%x\n", code);
-#else
-	(void)code;
-#endif
-}
-
 void led_blink(const char *gpio_name, int duration) {
 	int gpio = fdt_get_gpio_number(gpio_name);
 	if (gpio < 0) {
@@ -181,6 +154,10 @@ void led_init_by_name(const char *gpio_name) {
 }
 
 void led_init(void) {
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+	/* Already configured by the stage owner. Preserve the current code. */
+	return;
+#endif
 	int node = fdt_path_offset(gd->fdt_blob, "/tlmm-gpio/led_gpio");
 	if (node >= 0) {
 		int subnode;
@@ -190,10 +167,7 @@ void led_init(void) {
 				led_init_by_name(name);
 		}
 	}
-#ifdef CONFIG_IPQ5018_XIAOMI_RA80
-	/* 0x1: U-Boot reached LED/FDT setup. */
-	ra80_debug_led_code(0x1);
-#else
+#ifndef CONFIG_IPQ5018_XIAOMI_RA80
 	led_on("power_led");
 #endif
 	mdelay(500);
@@ -323,20 +297,12 @@ void btn_check_press(void) {
 	while (btn_pressed(name, sizeof(name))) {
 		if (counter == 0) {
 			printf("%s button is pressed for:%2d second(s) ", name, counter);
-#ifdef CONFIG_IPQ5018_XIAOMI_RA80
-			/* 0x2: Reset input was detected. */
-			ra80_debug_led_code(0x2);
-#endif
 		}
 		led_blink_then_on("power_led", 1000);
 		counter++;
 		printf("\b\b\b\b\b\b\b\b\b\b\b\b\b%2d second(s) ", counter);
 		if(counter >= 3){
 			printf("\n");
-#ifdef CONFIG_IPQ5018_XIAOMI_RA80
-			/* 0x3: Reset held for three seconds. */
-			ra80_debug_led_code(0x3);
-#endif
 			int led_node = fdt_path_offset(gd->fdt_blob, "/tlmm-gpio/led_gpio");
 			if (led_node >= 0) {
 				int subnode;
