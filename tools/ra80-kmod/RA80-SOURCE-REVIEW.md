@@ -144,3 +144,13 @@ RAM网络模式现直接在initr_nand最前面返回，不发起QPIC/BAM/NAND初
 此改动解决RAM测试对NAND初始化成功的依赖；冷启动NAND驱动仍需独立验证。BAM等待存在外层循环重置超时起点的问题，但没有硬件日志证明本次停在该循环，故本次不修改共享BAM驱动或猜测重置寄存器。
 
 本版关闭CONFIG_RA80_RUNTIME_DIAGNOSTICS，完整码表恢复：B=main_loop、C=board_eth_init、D=GMAC、E=网卡注册返回并开始HTTP、F=HTTP轮询观察到eth_is_active。F仍不证明ARP/ICMP/HTTP收发正常。
+
+## b6b61b8 实机停 E：灯序与链路路径复核
+
+用户确认最终1粉、2白。与其led_test校准一致：GPIO17=System黄、19=System白、20=Internet黄、22=Internet白。B=11(1011b)点17/19/22，E=14(1110b)点19/20/22。写寄存器顺序先System两珠再Internet两珠；不能按bit0是Internet推断颜色。最终E证明主循环中eth_initialize已返回、即将运行httpd；F仅在failsafe_httpd_poll观察到eth_is_active后设置。HTTP起始分支对RA80不调用传统led_on/off，未进入上传时不会被上传闪灯覆盖。
+
+审查发现可独立修复的缺陷：ipq_mac_reset无上限等待DMA SRST自清；返回失败无法驱动设备轮换。现在10000次10us读回失败返回-ETIMEDOUT，并由ipq_eth_init传播，后续MAC/DMA配置不执行。switch link读取用uint16截断MDIO返回的-ETIMEDOUT，可能产生假的LINK_UP位；现在保留int并拒绝负值和0xffff。
+
+HTTP初次eth_init失败后只有链路变化检测会触发后续尝试；链路稳定但初次初始化失败可能长停E。RAM测试现在每次失败完成至少1秒后重试，轮换成功时同步net_ethaddr和lwIP hwaddr。其它启动模式保持原重试方式。固定灯码定义未改，不借诊断闪烁重用码。
+
+CI使用真实函数源体配假MMIO/MDIO测试：复位永久置位必须返回且不能启动DMA、健康/边界复位成功、无链路不发起复位、MDIO负错误和全1值不算链路。没有实机寄存器日志，不能认定当前E必定来自某一个缺陷。

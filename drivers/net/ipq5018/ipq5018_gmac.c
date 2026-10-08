@@ -70,18 +70,22 @@ static int ipq_eth_wr_macaddr(struct eth_device *dev)
 	return 0;
 }
 
-static void ipq_mac_reset(struct eth_device *dev)
+static int ipq_mac_reset(struct eth_device *dev)
 {
 	struct ipq_eth_dev *priv = dev->priv;
 	struct eth_dma_regs *dma_reg = (struct eth_dma_regs *)priv->dma_regs_p;
 	u32 val;
+	unsigned int attempts = 10000;
 
 	writel(DMAMAC_SRST, &dma_reg->busmode);
 	do {
 		udelay(10);
 		val = readl(&dma_reg->busmode);
-	} while (val & DMAMAC_SRST);
-
+		if (!(val & DMAMAC_SRST))
+			return 0;
+	} while (--attempts);
+	printf("GMAC%d DMA reset timed out, busmode=%08x\n", priv->mac_unit, val);
+	return -ETIMEDOUT;
 }
 
 static void ipq_eth_mac_cfg(struct eth_device *dev)
@@ -313,7 +317,7 @@ static void ipq5018_enable_gephy(void)
 
 static int ipq5018_s17c_Link_Update(struct ipq_eth_dev *priv)
 {
-	uint16_t phy_data;
+	int phy_data;
 	int status = 1;
 
 	for(int i = 0;
@@ -323,7 +327,8 @@ static int ipq5018_s17c_Link_Update(struct ipq_eth_dev *priv)
 			0x11,
 			NULL);
 
-		if (phy_data == 0x50)
+		/* Keep MDIO errors signed; an error is never a live PHY link. */
+		if (phy_data < 0 || phy_data == 0xffff || phy_data == 0x50)
 			continue;
 
 		/* Atleast one port should be link up*/
@@ -473,7 +478,8 @@ int ipq_eth_init(struct eth_device *dev, bd_t *this)
 	priv->next_rx = 0;
 	priv->next_tx = 0;
 
-	ipq_mac_reset(dev);
+	if (ipq_mac_reset(dev))
+		return -ETIMEDOUT;
 	ipq_eth_wr_macaddr(dev);
 
 	/* DMA, MAC configuration for Synopsys GMAC */

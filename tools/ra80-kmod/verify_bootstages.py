@@ -52,6 +52,16 @@ def verify_source():
     assert '0x02, 0x52, 0x41, 0x38, 0x30, 0x10' in ethaddr
     late = (root/'board/qca/arm/common/board_init.c').read_text()
     assert 'if (!ra80_ram_test_active() && sfi->flash_type' in late
+    gmac = (root/'drivers/net/ipq5018/ipq5018_gmac.c').read_text()
+    assert 'unsigned int attempts = 10000;' in gmac and '} while (--attempts);' in gmac
+    assert re.search(r'if \(ipq_mac_reset\(dev\)\)\s+return -ETIMEDOUT;', gmac)
+    assert 'if (phy_data < 0 || phy_data == 0xffff || phy_data == 0x50)' in gmac
+    poll = (root/'failsafe/failsafe_httpd.c').read_text()
+    assert 'get_timer(ra80_last_eth_attempt) >= 1000' in poll
+    assert poll.index('ra80_last_eth_attempt = get_timer(0);') > poll.index('eth_ret = eth_init();')
+    assert 'memcpy(failsafe_netif.hwaddr, net_ethaddr, 6);' in poll
+    assert definitions['RA80_STAGE_MAIN'] == '11' and definitions['RA80_STAGE_LINK'] == '14'
+    print('PASS: fixed B/E meanings; bounded reset, signed MDIO errors and RAM link retry')
     print('PASS: RAM networking skips NAND, flash environment and ART dependencies')
     print('PASS: RAM marker protects early and late NAND writes; no automatic env save')
     print('PASS: each U-Boot boundary has one stage owner; one fixed Linux handoff code')

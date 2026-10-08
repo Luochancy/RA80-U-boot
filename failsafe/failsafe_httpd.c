@@ -1,4 +1,5 @@
 #include <common.h>
+#include <ra80_bootstage.h>
 #include <net.h>
 #include "../net/httpd.h"
 #include <malloc.h>
@@ -1744,6 +1745,9 @@ static struct netif failsafe_netif;
 
 static int httpd_progress_start_done = 0;
 static int eth_init_attempted = 0;
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+static ulong ra80_last_eth_attempt;
+#endif
 static ulong periodic_timer = 0;
 
 static void abort_port_pcb(struct tcp_pcb **list) {
@@ -1773,6 +1777,9 @@ void failsafe_httpd_stop(void) {
 	netif_remove(&failsafe_netif);
 	httpd_progress_start_done = 0;
 	eth_init_attempted = 0;
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+	ra80_last_eth_attempt = 0;
+#endif
 	periodic_timer = 0;
 }
 
@@ -1850,6 +1857,13 @@ void failsafe_httpd_poll(void) {
 #endif
 
 	if (!eth_is_active(eth_get_dev())) {
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+		/* A late PHY negotiation or a failed reset must not strand RAM HTTP.
+		 * Throttle retries from the end of the last initialization attempt. */
+		if (ra80_ram_test_active() && eth_init_attempted &&
+		    get_timer(ra80_last_eth_attempt) >= 1000)
+			eth_init_attempted = 0;
+#endif
 		if (!eth_init_attempted) {
 			int eth_ret;
 
@@ -1858,11 +1872,14 @@ void failsafe_httpd_poll(void) {
 			eth_set_current();
 			eth_ret = eth_init();
 #ifdef CONFIG_IPQ5018_XIAOMI_RA80
+			ra80_last_eth_attempt = get_timer(0);
 			if (eth_ret < 0) {
 
 				printf("RA80DBG: eth_init failed: %d\n", eth_ret);
 			} else {
-
+				/* eth_init may rotate to the other GMAC after netif creation. */
+				memcpy(net_ethaddr, eth_get_ethaddr(), 6);
+				memcpy(failsafe_netif.hwaddr, net_ethaddr, 6);
 				printf("RA80DBG: eth_init succeeded\n");
 			}
 #endif
