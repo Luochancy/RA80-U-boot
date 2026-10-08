@@ -39,6 +39,7 @@
 	movw r4, #0x1000
 	movt r4, #0x0101
 	movw r5, #0x2c1
+	movt r5, #0
 	str r5, [r4]
 	mov r6, #\sy
 	str r6, [r4, #4]
@@ -56,7 +57,7 @@
 	str r6, [r4, #4]
 	dsb sy
 	/* Visible dwell; not a calibrated time source. */
-	mov r6, #0x02000000
+	mov r6, #0x20000000
 991:	subs r6, r6, #1
 	bne 991b
 .endm
