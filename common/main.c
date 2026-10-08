@@ -19,6 +19,18 @@
 #endif
 DECLARE_GLOBAL_DATA_PTR;
 
+#if defined(CONFIG_LWIP_HTTPD) && defined(CONFIG_IPQ5018_XIAOMI_RA80)
+/*
+ * A normal image carries the guard value.  The RAM-only Linux handoff module
+ * changes only this word in the staged copy before jumping to U-Boot.  This
+ * keeps normal/flash boots on the button-controlled path while allowing the
+ * diagnostic RAM boot to enter Webfailsafe without holding Reset under Linux.
+ */
+#define RA80_RAMBOOT_MAGIC_GUARD 0x5241382fU
+#define RA80_RAMBOOT_MAGIC_ARMED 0x52413830U
+volatile unsigned int ra80_ramboot_magic = RA80_RAMBOOT_MAGIC_GUARD;
+#endif
+
 /*
  * Board-specific Platform code can reimplement show_boot_progress () if needed
  */
@@ -90,7 +102,20 @@ void main_loop(void)
 #endif /* CONFIG_UPDATE_TFTP */
 
 #ifdef CONFIG_LWIP_HTTPD
-	btn_check_press();
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+	if (ra80_ramboot_magic == RA80_RAMBOOT_MAGIC_ARMED) {
+		ra80_ramboot_magic = RA80_RAMBOOT_MAGIC_GUARD;
+		printf("RA80DBG: RAM-only marker accepted; auto-starting Webfailsafe\n");
+		ra80_debug_led_code(0x2);
+#ifndef CONFIG_IPQ40XX
+		eth_initialize();
+#endif
+		run_command("httpd", 0);
+	} else
+#endif
+	{
+		btn_check_press();
+	}
 #endif
 #ifdef CONFIG_BOARD_DISPLAY_NAME
 	const char *env_config = getenv("config_name");
