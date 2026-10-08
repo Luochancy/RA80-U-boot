@@ -108,6 +108,12 @@ void main_loop(void)
 		printf("RA80DBG: RAM-only marker accepted; auto-starting Webfailsafe\n");
 		ra80_debug_led_code(0x2);
 #ifndef CONFIG_IPQ40XX
+		/* RAM test: ignore stale environment interface preferences.
+		 * This changes RAM environment only; never saveenv. */
+		setenv("ethact", NULL);
+		setenv("ethprime", NULL);
+		setenv("ethrotate", "yes");
+		printf("RA80DBG: RAM test ethernet rotation enabled; no fixed device\n");
 		eth_initialize();
 #endif
 		run_command("httpd", 0);

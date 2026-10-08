@@ -405,7 +405,7 @@ static int __init ra80_ramboot_full_init(void)
 		 RA80_UBOOT_PHYS);
 	ra80_handoff_led(0xc); /* system off, network white: before SMP stop */
 	stop_secondary();
-	ra80_handoff_led(0x2); /* system blue only: SMP stop returned, raw restart next */
+	ra80_handoff_led(0x4); /* Internet yellow only: SMP stop returned, raw restart next */
 	writel(0, ra80_watchdog_map);
 	mb();
 	jump_to_ram(RA80_UBOOT_PHYS, true);
