@@ -14,8 +14,15 @@ PC carrier remaining up does not prove packets can reach the CPU.
 Actions run 37815421283 established a definite memory-layout failure in the
 reviewed configuration: __bss_end exceeds 0x4aa00000. CRT0 clears BSS before
 board_init_f, so this crosses the stock U-Boot reservation even before Ethernet.
-This is a concrete defect and plausible contributor to the observed partial
-boot; hardware confirmation after the correction is still required.
+The exact prior tested payload (506331c, SHA256
+527f8ef25677338c32784da2210b14382b1d27feb8ef6b8ea45988fa42e48bc5)
+also contains the CRT0 LDR/LDR/MOV/CMP/STRLO/ADDLO/BLO clearing loop, with literal
+BSS start/end 0x4a97eb3c / 0x4aa376c4. It clears 0x376c4 bytes beyond the
+U-Boot reservation into the stock SBL region, before board_init_f. This directly
+establishes the defect in the user's tested binary, not just a new source build.
+It is a plausible contributor to the observed partial boot; hardware confirmation
+after the correction is still required. Whether access protection faults at the
+boundary is not established by the available logs.
 
 ## Definite defects corrected
 

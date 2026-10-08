@@ -62,7 +62,7 @@ extern "C" {
 #endif
 /** The standard ICMP header (unspecified 32 bit data) */
 PACK_STRUCT_BEGIN
-struct icmp_hdr {
+struct lwip_icmp_hdr {
   PACK_STRUCT_FLD_8(u8_t type);
   PACK_STRUCT_FLD_8(u8_t code);
   PACK_STRUCT_FIELD(u16_t chksum);
