@@ -12,8 +12,9 @@ is `EA0000B8 E59FF014 E59FF014 E59FF014`, keeps a full backup, verifies every
 payload byte, rolls back immediately on a mismatch, and restores stock RAM when
 removed. It has no restart function, no watchdog control, and no NAND/MTD path.
 
-Do not flash the bundled `.mbn` to APPSBL or APPSBL_1. It is included so the
-module payload can be independently hashed and inspected.
+Do not flash the bundled flat `.bin` image to APPSBL or APPSBL_1. It is a
+RAM-load image, included so the module payload can be independently hashed and
+inspected.
 
 ## LED stage code
 
