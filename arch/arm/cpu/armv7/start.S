@@ -44,14 +44,17 @@
 	mov r6, #\sy
 	str r6, [r4, #4]
 	movw r4, #0x3000
+	movt r4, #0x0101
 	str r5, [r4]
 	mov r6, #\sb
 	str r6, [r4, #4]
 	movw r4, #0x4000
+	movt r4, #0x0101
 	str r5, [r4]
 	mov r6, #\ny
 	str r6, [r4, #4]
 	movw r4, #0x6000
+	movt r4, #0x0101
 	str r5, [r4]
 	mov r6, #\nb
 	str r6, [r4, #4]
