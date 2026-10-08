@@ -107,6 +107,11 @@
 			base = <0x39D00000>;
 			mac_pwr = <0xaa545>;
 			s17c_switch_enable = <1>;
+			/*
+			 * RA80 exposes 1 WAN + 3 LAN jacks, but the stock Linux DT
+			 * enumerates all QCA8337 MDIO PHY slots 0..4.  This value is
+			 * the switch PHY topology, not the number of visible jacks.
+			 */
 			switch_port_count = <5>;
 			switch_phy_address = <0 1 2 3 4>;
 			switch_gpio = <26>;
