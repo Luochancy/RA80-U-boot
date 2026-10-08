@@ -71,10 +71,10 @@ jobs:
         run: |
           set -euxo pipefail
           PAYLOAD=u-boot.bin
-          # Use the module directly emitted by Kbuild.  The OpenWrt package copy
-          # under .pkgdir has its vermagic entry removed by the SDK packaging
-          # pass, which makes it a weaker artifact for ABI inspection.
-          KO="$(find /tmp/sdk/build_dir -type f -name ra80_stage_ethdiag.ko ! -path '*/.pkgdir/*' ! -path '*/ipkg-*/*' -print -quit)"
+          # QSDK keeps the final module in the package staging tree and removes
+          # the temporary Kbuild copy.  Its package pass also removes vermagic,
+          # so kernel release and compiler identity are gated independently.
+          KO="$(find /tmp/sdk/build_dir -type f -name ra80_stage_ethdiag.ko -print -quit)"
           test -n "$KO"
           test -s "$KO"
           KERNEL_TREE="$(find /tmp/sdk/build_dir -type d -path '*/linux-ipq50xx_arm/linux-4.4.60' -print -quit)"
