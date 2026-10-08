@@ -141,7 +141,11 @@ jobs:
           grep -F 'RAM ONLY; NO NAND/MTD/APPSBL writes' /tmp/ra80_ramboot_full.ko.strings.txt
           grep -F 'STAGE VERIFIED AND ARMED' /tmp/ra80_ramboot_full.ko.strings.txt
           grep -F 'HANDOFF NOW' /tmp/ra80_ramboot_full.ko.strings.txt
-          grep -F 'RAM-only marker accepted; auto-starting Webfailsafe' u-boot.bin
+          # RAM entry no longer prints this old UART message. Its actual body is
+          # exercised by test_ram_entry.py; require its linked marker/endpoints.
+          for SYMBOL in ra80_ramboot_magic HttpdStart httpd_poll; do
+            grep -Eq "^[[:space:]]*0x[[:xdigit:]]+[[:space:]]+$SYMBOL[[:space:]]*$" u-boot.map
+          done
 
           VERMAGIC="$(sed -n 's/^vermagic=//p' /tmp/ra80_stage_ethdiag.ko.strings.txt | head -n 1)"
           if [[ -n "$VERMAGIC" && "$VERMAGIC" != 4.4.60* ]]; then
