@@ -342,7 +342,7 @@ icmp_send_response(struct pbuf *p, u8_t type, u8_t code)
 {
   struct pbuf *q;
   struct ip_hdr *iphdr;
-  struct icmp_hdr *icmphdr;
+  struct lwip_icmp_hdr *icmphdr;
   ip4_addr_t iphdr_src;
   struct netif *netif;
   u16_t response_pkt_len;
@@ -357,14 +357,14 @@ icmp_send_response(struct pbuf *p, u8_t type, u8_t code)
   }
 
   /* ICMP header + part of original packet */
-  q = pbuf_alloc(PBUF_IP, sizeof(struct icmp_hdr) + response_pkt_len, PBUF_RAM);
+  q = pbuf_alloc(PBUF_IP, sizeof(struct lwip_icmp_hdr) + response_pkt_len, PBUF_RAM);
   if (q == NULL) {
     LWIP_DEBUGF(ICMP_DEBUG, ("icmp_send_response: failed to allocate pbuf for ICMP packet.\n"));
     MIB2_STATS_INC(mib2.icmpouterrors);
     return;
   }
   LWIP_ASSERT("check that first pbuf can hold icmp message",
-              (q->len >= (sizeof(struct icmp_hdr) + response_pkt_len)));
+              (q->len >= (sizeof(struct lwip_icmp_hdr) + response_pkt_len)));
 
   iphdr = (struct ip_hdr *)p->payload;
   LWIP_DEBUGF(ICMP_DEBUG, ("icmp_send_response: Sending ICMP type %02X for packet from ", type));
@@ -373,13 +373,13 @@ icmp_send_response(struct pbuf *p, u8_t type, u8_t code)
   ip4_addr_debug_print_val(ICMP_DEBUG, iphdr->dest);
   LWIP_DEBUGF(ICMP_DEBUG, ("\n"));
 
-  icmphdr = (struct icmp_hdr *)q->payload;
+  icmphdr = (struct lwip_icmp_hdr *)q->payload;
   icmphdr->type = type;
   icmphdr->code = code;
   icmphdr->data = 0;
 
   /* copy fields from original packet */
-  pbuf_copy_partial_pbuf(q, p, response_pkt_len, sizeof(struct icmp_hdr));
+  pbuf_copy_partial_pbuf(q, p, response_pkt_len, sizeof(struct lwip_icmp_hdr));
 
   ip4_addr_copy(iphdr_src, iphdr->src);
 #ifdef LWIP_HOOK_IP4_ROUTE_SRC
