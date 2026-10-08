@@ -27,11 +27,21 @@
 
 #define RA80_STOCK_VECTOR0    0xea0000b8U
 #define RA80_VECTOR_LITERAL   0xe59ff014U
+#define RA80_WATCHDOG_CTRL_PHYS      0x0b017008UL
+#define RA80_EXPECTED_SOFT_RESTART   0x81219980UL
+#define RA80_EXPECTED_RAW_RESTART    0x81219958UL
+#define RA80_EXPECTED_SMP_STOP       0x8121d0a4UL
+
+extern unsigned long kallsyms_lookup_name(const char *name);
 
 static void __iomem *ra80_uboot_map;
 static u8 *ra80_stock_backup;
 static u32 ra80_stock_fnv1a;
 static bool ra80_staged;
+static bool handoff_preflight;
+module_param(handoff_preflight, bool, 0444);
+MODULE_PARM_DESC(handoff_preflight,
+	"Read-only kernel handoff preflight after staging; never jumps");
 
 static u32 fnv1a_buffer(const u8 *buffer, size_t length)
 {
@@ -118,6 +128,45 @@ static int restore_stock(void)
 	ra80_staged = false;
 	pr_info("ra80_stage_ethdiag: stock RAM restored and verified fnv1a=%08x\n",
 		restored_hash);
+	return 0;
+}
+
+/*
+ * A deliberate read-only checkpoint for the future handoff module.  It is
+ * opt-in, runs only after the payload byte verification above, and has no
+ * restart, CPU-stop, watchdog-write, NAND, or MTD operation.
+ */
+static int check_handoff_preflight(void)
+{
+	void __iomem *watchdog;
+	unsigned long soft_restart;
+	unsigned long raw_restart;
+	unsigned long smp_stop;
+	u32 watchdog_value;
+
+	if (!handoff_preflight)
+		return 0;
+
+	soft_restart = kallsyms_lookup_name("soft_restart");
+	raw_restart = kallsyms_lookup_name("_soft_restart");
+	smp_stop = kallsyms_lookup_name("smp_send_stop");
+	if (soft_restart != RA80_EXPECTED_SOFT_RESTART ||
+	    raw_restart != RA80_EXPECTED_RAW_RESTART ||
+	    smp_stop != RA80_EXPECTED_SMP_STOP) {
+		pr_err("ra80_stage_ethdiag: PREFLIGHT symbol mismatch soft=%08lx raw=%08lx smp=%08lx\n",
+		       soft_restart, raw_restart, smp_stop);
+		return -EPERM;
+	}
+
+	watchdog = ioremap(RA80_WATCHDOG_CTRL_PHYS, sizeof(u32));
+	if (!watchdog)
+		return -ENOMEM;
+	watchdog_value = readl(watchdog);
+	iounmap(watchdog);
+
+	pr_info("ra80_stage_ethdiag: PREFLIGHT PASS soft=%08lx raw=%08lx smp=%08lx watchdog=%08x\n",
+		soft_restart, raw_restart, smp_stop, watchdog_value);
+	pr_info("ra80_stage_ethdiag: PREFLIGHT is read-only; no jump, CPU stop, or watchdog write\n");
 	return 0;
 }
 
@@ -226,6 +275,15 @@ static int __init ra80_stage_ethdiag_init(void)
 		return ret;
 	}
 
+	ret = check_handoff_preflight();
+	if (ret) {
+		pr_err("ra80_stage_ethdiag: preflight failed; restoring stock RAM\n");
+		if (restore_stock())
+			pr_emerg("ra80_stage_ethdiag: automatic rollback failed\n");
+		release_resources();
+		return ret;
+	}
+
 	ra80_staged = true;
 	pr_info("ra80_stage_ethdiag: STAGE VERIFIED first=%08x len=%u fnv1a=%08x\n",
 		payload_word0, RA80_PAYLOAD_LEN, RA80_PAYLOAD_FNV1A);
@@ -249,4 +307,4 @@ module_exit(ra80_stage_ethdiag_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Luochancy / OpenAI-assisted RA80 research");
 MODULE_DESCRIPTION("Reversible RAM-only Xiaomi RA80 LED-diagnostic U-Boot stage");
-MODULE_VERSION("0.3");
+MODULE_VERSION("0.4");
