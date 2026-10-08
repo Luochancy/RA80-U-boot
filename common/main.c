@@ -34,6 +34,9 @@ volatile unsigned int ra80_ramboot_magic = RA80_RAMBOOT_MAGIC_GUARD;
 
 #ifdef CONFIG_IPQ5018_XIAOMI_RA80
 static int ra80_ram_test_mode;
+#ifdef CONFIG_RA80_LINK_DIAGNOSTICS
+unsigned int ra80_link_furthest;
+#endif
 int ra80_ram_test_active(void)
 {
 	/* The initialized-data marker is valid before NAND/env initialization.
@@ -145,6 +148,7 @@ void main_loop(void)
 			puts("RA80DBG: RAM HTTP start failed; automatic boot suppressed\n");
 			hang();
 		}
+		ra80_net_stage(RA80_NET_HTTP_RETURN, 6);
 	} else
 #endif
 	{

@@ -77,6 +77,8 @@ static int ipq_mac_reset(struct eth_device *dev)
 	u32 val;
 	unsigned int attempts = 10000;
 
+	ra80_net_stage(RA80_NET_RESET, 13);
+
 	writel(DMAMAC_SRST, &dma_reg->busmode);
 	do {
 		udelay(10);
@@ -470,16 +472,21 @@ int ipq_eth_init(struct eth_device *dev, bd_t *this)
 	struct ipq_eth_dev *priv = dev->priv;
 	struct eth_dma_regs *dma_reg = (struct eth_dma_regs *)priv->dma_regs_p;
 	u32 data;
+	int ret;
 
-	if(ipq5018_phy_link_update(dev) < 0) {
+	ra80_net_stage(RA80_NET_ETH_INIT, 10);
+	ret = ipq5018_phy_link_update(dev);
+	ra80_net_stage(RA80_NET_PHY_RETURN, 12);
+	if (ret < 0)
 		return -1;
-	}
 
 	priv->next_rx = 0;
 	priv->next_tx = 0;
 
-	if (ipq_mac_reset(dev))
-		return -ETIMEDOUT;
+	ret = ipq_mac_reset(dev);
+	ra80_net_stage(RA80_NET_RESET_RETURN, 0);
+	if (ret)
+		return ret;
 	ipq_eth_wr_macaddr(dev);
 
 	/* DMA, MAC configuration for Synopsys GMAC */

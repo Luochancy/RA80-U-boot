@@ -8,7 +8,8 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[2]
 source = (root/'drivers/net/ipq5018/ipq5018_gmac.c').read_text()
 
-def function(signature):
+def function(signature, text=None):
+    source = text if text is not None else (root/'drivers/net/ipq5018/ipq5018_gmac.c').read_text()
     begin = source.index(signature)
     body = source.index('{', begin)
     depth = 1
@@ -17,6 +18,10 @@ def function(signature):
         depth += (source[end] == '{') - (source[end] == '}')
         end += 1
     return source[begin:end]
+
+header = (root/'include/ra80_bootstage.h').read_text()
+latch = function('static inline void ra80_net_stage(', header)
+definitions = '\n'.join(line for line in header.splitlines() if line.startswith('#define RA80_NET_'))
 
 prefix = r'''
 #include <assert.h>
@@ -40,6 +45,10 @@ struct board_cfg { int switch_port_count; int switch_port_phy_address[5]; } cfg;
 struct ipq_eth_dev { void *dma_regs_p; int mac_unit; unsigned next_rx,next_tx;
     void *desc_tx[1]; struct board_cfg *gmac_board_cfg; } priv;
 struct eth_device { void *priv; } dev;
+#define CONFIG_RA80_LINK_DIAGNOSTICS 1
+unsigned int ra80_link_furthest;
+static unsigned stage_writes,stage_code;
+static void ra80_stage_raw(unsigned code) { stage_writes++; stage_code=code; }
 static unsigned polls,clear_after,delay_calls,write_calls,config_calls;
 static int phy_result,phy_values[5];
 static void udelay(unsigned us) { assert(us==10); delay_calls++; }
@@ -71,6 +80,14 @@ static void reset_fake(unsigned clear,int link) {
 '''
 tests = r'''
 int main(void) {
+    const unsigned codes[]={11,14,3,4,5,6,7,8,9,10,12,13,0,15};
+    for(unsigned i=0;i<14;i++) {
+        ra80_net_stage(i+1,codes[i]);
+        assert(stage_code==codes[i] && stage_writes==i+1);
+        for(unsigned retry=1;retry<=i+1;retry++) ra80_net_stage(retry,codes[retry-1]);
+        assert(stage_code==codes[i] && stage_writes==i+1);
+    }
+    puts("PASS: actual milestone latch holds the furthest code across retries, including all-off and final F");
     reset_fake(0,0);
     assert(ipq_eth_init(&dev,NULL)==-ETIMEDOUT);
     assert(polls==10000 && delay_calls==10000 && write_calls==1);
@@ -93,7 +110,7 @@ int main(void) {
     return 0;
 }
 '''
-code = prefix + '\n'.join(function(s) for s in (
+code = prefix + definitions + '\n' + latch + '\n' + '\n'.join(function(s) for s in (
     'static int ipq_mac_reset(', 'int ipq_eth_init(',
     'static int ipq5018_s17c_Link_Update(')) + tests
 with tempfile.TemporaryDirectory(prefix='ra80-gmac-test-') as tmp:

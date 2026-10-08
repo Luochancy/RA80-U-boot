@@ -128,6 +128,15 @@ config RA80_RUNTIME_DIAGNOSTICS
 	  Use unique steady LED codes for the runtime cache/malloc/DM/SMEM/
 	  NAND/environment/main-loop boundaries. No diagnostic delay loops.
 
+config RA80_LINK_DIAGNOSTICS
+	bool "RA80 steady LED diagnostics focused on HTTP and link startup"
+	depends on IPQ5018_XIAOMI_RA80 && !RA80_RUNTIME_DIAGNOSTICS
+	default n
+	help
+	  Keep B/E/F meanings and use the remaining steady combinations to
+	  bracket HTTP, poll, PHY and DMA reset calls. Latch the furthest
+	  milestone so retry loops never replay earlier codes. No delays.
+
 config IPQ5018_XIAOMI_RA80
 	bool "For Xiaomi AX3000 RA80 V1 support"
 	select 256MB_RAM

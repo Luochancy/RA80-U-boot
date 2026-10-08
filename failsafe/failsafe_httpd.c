@@ -1807,7 +1807,7 @@ void failsafe_lwip_init(struct ip4_addr *ipaddr, struct ip4_addr *netmask, struc
 }
 
 void failsafe_httpd_poll(void) {
-	ulong now = get_timer(0);
+	ulong now;
 #if defined(CONFIG_IPQ5332) || defined(CONFIG_IPQ9574)
 	int link_changed = 0;
 #endif
@@ -1815,6 +1815,8 @@ void failsafe_httpd_poll(void) {
 	if (!webfailsafe_is_running)
 		return;
 
+	ra80_net_stage(RA80_NET_POLL, 7);
+	now = get_timer(0);
 	if (webfailsafe_ready_for_upgrade) {
 		webfailsafe_ready_for_upgrade = 0;
 		upgrade_status = 1;
@@ -1850,11 +1852,13 @@ void failsafe_httpd_poll(void) {
 			eth_init_attempted = 0;
 	}
 
+	ra80_net_stage(RA80_NET_LINK_CHECK, 8);
 #if defined(CONFIG_IPQ5332) || defined(CONFIG_IPQ9574)
 	link_changed = eth_check_link_change();
 #else
 	eth_check_link_change();
 #endif
+	ra80_net_stage(RA80_NET_LINK_RETURN, 9);
 
 	if (!eth_is_active(eth_get_dev())) {
 #ifdef CONFIG_IPQ5018_XIAOMI_RA80

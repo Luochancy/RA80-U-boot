@@ -54,13 +54,25 @@ def verify_source():
     assert 'if (!ra80_ram_test_active() && sfi->flash_type' in late
     gmac = (root/'drivers/net/ipq5018/ipq5018_gmac.c').read_text()
     assert 'unsigned int attempts = 10000;' in gmac and '} while (--attempts);' in gmac
-    assert re.search(r'if \(ipq_mac_reset\(dev\)\)\s+return -ETIMEDOUT;', gmac)
+    assert re.search(r'ret = ipq_mac_reset\(dev\);\s+ra80_net_stage\(RA80_NET_RESET_RETURN, 0\);\s+if \(ret\)\s+return ret;', gmac)
     assert 'if (phy_data < 0 || phy_data == 0xffff || phy_data == 0x50)' in gmac
     poll = (root/'failsafe/failsafe_httpd.c').read_text()
     assert 'get_timer(ra80_last_eth_attempt) >= 1000' in poll
     assert poll.index('ra80_last_eth_attempt = get_timer(0);') > poll.index('eth_ret = eth_init();')
     assert 'memcpy(failsafe_netif.hwaddr, net_ethaddr, 6);' in poll
     assert definitions['RA80_STAGE_MAIN'] == '11' and definitions['RA80_STAGE_LINK'] == '14'
+    net_definitions = dict(re.findall(r'^#define (RA80_NET_\w+) (\d+)$', header.read_text(), re.M))
+    assert sorted(map(int, net_definitions.values())) == list(range(1, 15))
+    net_owners = []
+    for path in ['include/ra80_bootstage.h', 'common/main.c', 'net/httpd.c',
+                 'failsafe/failsafe_httpd.c', 'drivers/net/ipq5018/ipq5018_gmac.c']:
+        net_owners.extend(re.findall(r'ra80_net_stage\(\s*(RA80_NET_\w+),\s*(\d+)\)', (root/path).read_text()))
+    assert sorted(name for name, code in net_owners) == sorted(net_definitions), net_owners
+    ordered_codes = [int(code) for name, code in sorted(net_owners, key=lambda item: int(net_definitions[item[0]]))]
+    assert ordered_codes == [11,14,3,4,5,6,7,8,9,10,12,13,0,15], ordered_codes
+    assert len(set(ordered_codes + [1, 2])) == 16
+    assert 'if (ordinal <= ra80_link_furthest)' in header.read_text()
+    print('PASS: 16 unique physical codes; B/E/F preserved; one owner per monotonic link milestone')
     print('PASS: fixed B/E meanings; bounded reset, signed MDIO errors and RAM link retry')
     print('PASS: RAM networking skips NAND, flash environment and ART dependencies')
     print('PASS: RAM marker protects early and late NAND writes; no automatic env save')
@@ -132,7 +144,7 @@ for offset in positions:
         code |= ((output & 2) >> 1) << bit
     assert words[-1] == 0xF57FF04F, 'missing DSB SY'
     codes.append(code)
-expected_codes = [2] if 'CONFIG_RA80_RUNTIME_DIAGNOSTICS=y' in config else [2, 3, 4, 8]
+expected_codes = [2] if any(profile + '=y' in config for profile in ('CONFIG_RA80_RUNTIME_DIAGNOSTICS', 'CONFIG_RA80_LINK_DIAGNOSTICS')) else [2, 3, 4, 8]
 assert sorted(codes) == expected_codes, codes
 reset_word = struct.unpack_from('<I', blob)[0]
 assert reset_word >> 24 == 0xEA
