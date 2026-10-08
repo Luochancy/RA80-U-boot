@@ -164,3 +164,13 @@ CONFIG_RA80_LINK_DIAGNOSTICS独立于运行期细分，复用早期已验证位�
 LED原始四GPIO映射不变。early ARM只写reset2，不访问BSS；运行期锁存在BSS清零完成后使用。进度使用独立1..14序号，保留最深序号；重试不会重写同一颜色或退回之前颜色。链路检测内部调用eth_init可跳过后续浅层标记，这是保留更精确位置的预期行为。测试提取实际锁存函数，遍历全部阶段并重放所有较浅阶段，验证保持最终F与中间全灭；提取实际复位/init函数的假MMIO测试继续验证超时不启动DMA。源码门禁检查16种物理码唯一、每个阶段只有一处写入所有者；二进制门禁检查reset ARM直线块及RAM/DTB边界。
 
 本次未添加硬件修复假设。新E持续意味着还未到HttpdStart入口，下一步应审查命令派发；新A/C/D/0分别缩小PHY与复位范围。不能继续把所有E都归为网卡未起，也不能把灯跳变视为系统完整可用。
+
+## 0f85c5a MD5匹配、实机停B：审查并修复主循环入口
+
+B意味着main_loop已到达，但尚未更新E。B到E包含cli_init、串口printf、环境设置和eth_initialize。源码include/configs/ipq5018.h无条件定义CONFIG_SYS_HUSH_PARSER，虽然.config不含该项，仍会编译Hush；此前仅据.config认定无Hush的推断不成立。u_boot_hush_start分配top_vars后不检查NULL就写字段，是可见故障风险，但没有实机堆状态证明这次必然是malloc失败。CONFIG_IPQ_ETH_INIT_DEFER也在配置头中启用，因此initr_net没有提前注册，本次main中的eth_initialize是首次注册，不能误称二次注册。
+
+新RAM入口从main_loop的B后立即分支，在CLI/Hush/日志之前禁用控制台，清RAM marker但保留mode锁存，设置RAM IP与轮换环境，注册一次，直接调用HttpdStart，随后独立httpd_poll无限循环。不依赖CLI等待字符时插入的poll，也不经过run_command。正常未标记启动保留CLI、按键和自动启动路径。环境设置失败、设备数<=0或运行标志未设置只停止，不启动原厂内核或写入闪存。
+
+board_eth_init还会在ipq_gmac_init后无条件调用board_update_caldata。控制FDT若无slot_Id，原路径打印后返回；若有slot_Id则从ART读校准数据并经SCM修改XO覆盖寄存器。之前只保护MAC读取，遗漏这条校准读取。RAM模式现在跳过调用，并在校准入口与get_eth_caldata读助手最前面再加保护；不发起ART/NAND读取或校准SCM，保留Linux建立的状态。该缺口确实存在，但B不能证明它是本次唯一故障。
+
+新固定阶段仍保留B/E/F与C/D/0，3..7标记直接入口、环境完成、board_eth_init、ipq_gmac_init及其返回；8/9为HTTP入口/lwIP返回，A为有效网络轮询。16种物理组合唯一，序号锁存仍禁止重试倒退。没有插入延时。假网络测试提取实际RAM入口，验证控制台关闭、只注册一次、直接持续轮询，以及环境/无设备/HTTP失败不越过安全停止点。GMAC未初始化局部指针清理与设备数组边界同时修正。

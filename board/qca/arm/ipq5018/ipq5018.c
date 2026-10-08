@@ -1248,7 +1248,9 @@ int board_eth_init(bd_t *bis)
 		 gmac_cfg[loop].unit = -1;
 
 	status = ipq_gmac_init(gmac_cfg);
-	board_update_caldata();
+	ra80_net_stage(RA80_NET_REGISTER_RETURN, 7);
+	if (!ra80_ram_test_active())
+		board_update_caldata();
 
 	return status;
 }
@@ -1840,6 +1842,9 @@ int get_eth_caldata(u32 *caldata, u32 offset)
         char mmc_blks[512];
 #endif
 
+	if (ra80_ram_test_active())
+		return -EPERM;
+
 	if ((sfi->flash_type == SMEM_BOOT_SPI_FLASH) ||
 		(sfi->flash_type == SMEM_BOOT_NOR_FLASH) ||
 		(sfi->flash_type == SMEM_BOOT_NORPLUSNAND) ||
@@ -1964,6 +1969,11 @@ void board_update_caldata()
 	u32 u32_calData = 0u;
 	u32 u32_CDACIN =0U, u32_CDACOUT = 0u;
 	int node_off,slotId;
+
+	/* Linux has already calibrated XO. RAM networking must not read ART or
+	 * issue calibration SCM calls after skipping NAND initialization. */
+	if (ra80_ram_test_active())
+		return;
 
 	node_off = fdt_path_offset(gd->fdt_blob, "/slot_Id");
 	if (node_off < 0) {

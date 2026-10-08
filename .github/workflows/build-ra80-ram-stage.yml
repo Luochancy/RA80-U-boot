@@ -44,6 +44,7 @@ jobs:
           cp u-boot.map diagnostics/
           cp .config diagnostics/uboot.config
           python3 tools/ra80-kmod/test_eth_reset.py | tee diagnostics/ethernet-regression.txt
+          python3 tools/ra80-kmod/test_ram_entry.py | tee diagnostics/ram-entry-regression.txt
           ../staging_dir/toolchain-arm_cortex-a7_gcc-5.2.0_musl-1.1.16_eabi/bin/arm-openwrt-linux-nm -S --size-sort u-boot > diagnostics/symbol-sizes.txt
           python3 tools/ra80-kmod/verify_bootstages.py u-boot.bin u-boot.map | tee diagnostics/bootstage-verification.txt
           # The final ELF is stripped; use the symbol address from its link map.
@@ -104,6 +105,7 @@ jobs:
           mkdir -p out
           cp diagnostics/bootstage-verification.txt out/
           cp diagnostics/ethernet-regression.txt out/
+          cp diagnostics/ram-entry-regression.txt out/
           cp diagnostics/symbol-sizes.txt out/
           cp u-boot.map out/
           cp .config out/uboot.config

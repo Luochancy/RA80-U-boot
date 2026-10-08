@@ -474,7 +474,6 @@ int ipq_eth_init(struct eth_device *dev, bd_t *this)
 	u32 data;
 	int ret;
 
-	ra80_net_stage(RA80_NET_ETH_INIT, 10);
 	ret = ipq5018_phy_link_update(dev);
 	ra80_net_stage(RA80_NET_PHY_RETURN, 12);
 	if (ret < 0)
@@ -756,7 +755,7 @@ static void mdio_init(void)
 
 int ipq_gmac_init(ipq_gmac_board_cfg_t *gmac_cfg)
 {
-	struct eth_device *dev[CONFIG_IPQ_NO_MACS];
+	struct eth_device *dev[CONFIG_IPQ_NO_MACS] = {0};
 	uchar enet_addr[CONFIG_IPQ_NO_MACS * 6];
 	int i;
 	uint32_t phy_chip_id, phy_chip_id1, phy_chip_id2;
@@ -773,7 +772,7 @@ int ipq_gmac_init(ipq_gmac_board_cfg_t *gmac_cfg)
 	/* Getting the MAC address from ART partition */
 	ret = get_eth_mac_address(enet_addr, CONFIG_IPQ_NO_MACS);
 
-	for (i = 0; gmac_cfg_is_valid(gmac_cfg); gmac_cfg++, i++) {
+	for (i = 0; i < CONFIG_IPQ_NO_MACS && gmac_cfg_is_valid(gmac_cfg); gmac_cfg++, i++) {
 
 		dev[i] = malloc(sizeof(struct eth_device));
 		if (dev[i] == NULL)

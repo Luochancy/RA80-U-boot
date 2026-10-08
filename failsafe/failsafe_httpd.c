@@ -1815,7 +1815,7 @@ void failsafe_httpd_poll(void) {
 	if (!webfailsafe_is_running)
 		return;
 
-	ra80_net_stage(RA80_NET_POLL, 7);
+	ra80_net_stage(RA80_NET_POLL, 10);
 	now = get_timer(0);
 	if (webfailsafe_ready_for_upgrade) {
 		webfailsafe_ready_for_upgrade = 0;
@@ -1852,13 +1852,11 @@ void failsafe_httpd_poll(void) {
 			eth_init_attempted = 0;
 	}
 
-	ra80_net_stage(RA80_NET_LINK_CHECK, 8);
 #if defined(CONFIG_IPQ5332) || defined(CONFIG_IPQ9574)
 	link_changed = eth_check_link_change();
 #else
 	eth_check_link_change();
 #endif
-	ra80_net_stage(RA80_NET_LINK_RETURN, 9);
 
 	if (!eth_is_active(eth_get_dev())) {
 #ifdef CONFIG_IPQ5018_XIAOMI_RA80

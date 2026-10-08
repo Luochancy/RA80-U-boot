@@ -65,13 +65,26 @@ def verify_source():
     assert sorted(map(int, net_definitions.values())) == list(range(1, 15))
     net_owners = []
     for path in ['include/ra80_bootstage.h', 'common/main.c', 'net/httpd.c',
-                 'failsafe/failsafe_httpd.c', 'drivers/net/ipq5018/ipq5018_gmac.c']:
+                 'failsafe/failsafe_httpd.c', 'drivers/net/ipq5018/ipq5018_gmac.c',
+                 'board/qca/arm/ipq5018/ipq5018.c']:
         net_owners.extend(re.findall(r'ra80_net_stage\(\s*(RA80_NET_\w+),\s*(\d+)\)', (root/path).read_text()))
     assert sorted(name for name, code in net_owners) == sorted(net_definitions), net_owners
     ordered_codes = [int(code) for name, code in sorted(net_owners, key=lambda item: int(net_definitions[item[0]]))]
-    assert ordered_codes == [11,14,3,4,5,6,7,8,9,10,12,13,0,15], ordered_codes
+    assert ordered_codes == [11,3,4,5,6,7,14,8,9,10,12,13,0,15], ordered_codes
     assert len(set(ordered_codes + [1, 2])) == 16
     assert 'if (ordinal <= ra80_link_furthest)' in header.read_text()
+    ram_entry = main[main.index('static void ra80_ram_network_loop'):main.index('/* We come here')]
+    assert 'run_command' not in ram_entry and 'cli_init' not in ram_entry
+    assert 'gd->flags |= GD_FLG_DISABLE_CONSOLE;' in ram_entry
+    assert ram_entry.index('eth_initialize();') < ram_entry.index('HttpdStart();') < ram_entry.index('httpd_poll();')
+    assert main.index('ra80_ram_network_loop();') < main.index('cli_init();')
+    board = (root/'board/qca/arm/ipq5018/ipq5018.c').read_text()
+    cal = board[board.index('void board_update_caldata()'):]
+    assert cal.index('if (ra80_ram_test_active())') < cal.index('fdt_path_offset')
+    reader = board[board.index('int get_eth_caldata('):board.index('void board_update_caldata()')]
+    assert reader.index('if (ra80_ram_test_active())') < reader.index('smem_getpart')
+    assert 'return -EPERM;' in reader
+    print('PASS: direct RAM HTTP/poll entry before Hush; console disabled; ART calibration paths blocked')
     print('PASS: 16 unique physical codes; B/E/F preserved; one owner per monotonic link milestone')
     print('PASS: fixed B/E meanings; bounded reset, signed MDIO errors and RAM link retry')
     print('PASS: RAM networking skips NAND, flash environment and ART dependencies')

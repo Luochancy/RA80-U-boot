@@ -39,15 +39,15 @@
 
 /* Ordinals describe progress, not the numerical order of the raw lamp code. */
 #define RA80_NET_MAIN 1
-#define RA80_NET_HTTP_CALL 2
-#define RA80_NET_HTTP_ENTRY 3
-#define RA80_NET_NET_READY 4
-#define RA80_NET_LWIP_RETURN 5
-#define RA80_NET_HTTP_RETURN 6
-#define RA80_NET_POLL 7
-#define RA80_NET_LINK_CHECK 8
-#define RA80_NET_LINK_RETURN 9
-#define RA80_NET_ETH_INIT 10
+#define RA80_NET_PREPARE 2
+#define RA80_NET_ENV_READY 3
+#define RA80_NET_BOARD 4
+#define RA80_NET_GMAC 5
+#define RA80_NET_REGISTER_RETURN 6
+#define RA80_NET_HTTP_CALL 7
+#define RA80_NET_HTTP_ENTRY 8
+#define RA80_NET_LWIP_RETURN 9
+#define RA80_NET_POLL 10
 #define RA80_NET_PHY_RETURN 11
 #define RA80_NET_RESET 12
 #define RA80_NET_RESET_RETURN 13
@@ -119,6 +119,10 @@ static inline void ra80_bootstage(unsigned int code)
 #ifdef CONFIG_RA80_LINK_DIAGNOSTICS
  if (code == RA80_STAGE_MAIN)
   ra80_net_stage(RA80_NET_MAIN, 11);
+ else if (code == RA80_STAGE_ETH_BOARD)
+  ra80_net_stage(RA80_NET_BOARD, 5);
+ else if (code == RA80_STAGE_GMAC)
+  ra80_net_stage(RA80_NET_GMAC, 6);
  else if (code == RA80_STAGE_LINK)
   ra80_net_stage(RA80_NET_HTTP_CALL, 14);
  else if (code == RA80_STAGE_HTTP)

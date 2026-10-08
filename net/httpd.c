@@ -48,9 +48,8 @@ void HttpdStart(void) {
 	struct ip4_addr ipaddr, netmask, gw;
 	ulong tmp_ip_addr;
 
-	ra80_net_stage(RA80_NET_HTTP_ENTRY, 3);
+	ra80_net_stage(RA80_NET_HTTP_ENTRY, 8);
 	net_init();
-	ra80_net_stage(RA80_NET_NET_READY, 4);
 
 	IP4_ADDR(&gw, 0, 0, 0, 0);
 
@@ -76,7 +75,7 @@ void HttpdStart(void) {
 
 	failsafe_lwip_init(&ipaddr, &netmask, &gw);
 	webfailsafe_is_running = 1;
-	ra80_net_stage(RA80_NET_LWIP_RETURN, 5);
+	ra80_net_stage(RA80_NET_LWIP_RETURN, 9);
 }
 
 static void reset_webfailsafe_state(void) {

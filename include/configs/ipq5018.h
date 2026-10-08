@@ -26,6 +26,9 @@
 #define CONFIG_IPQ_NO_RELOC
 
 #define CONFIG_SYS_VSNPRINTF
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+#define CONFIG_DISABLE_CONSOLE
+#endif
 
 /*
  * Enable Early and Late init

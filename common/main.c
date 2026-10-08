@@ -17,6 +17,11 @@
 #ifdef CONFIG_LWIP_HTTPD
 #include <asm/arch-qca-common/gpio.h>
 #include <ipq_api.h>
+#if defined(CONFIG_IPQ5018_XIAOMI_RA80)
+#include <net.h>
+#include "../net/httpd.h"
+#include "../failsafe/failsafe_httpd.h"
+#endif
 #endif
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -90,6 +95,35 @@ static void run_preboot_environment_command(void)
 }
 #endif
 
+#if defined(CONFIG_LWIP_HTTPD) && defined(CONFIG_IPQ5018_XIAOMI_RA80)
+/* RAM diagnostics need no interactive shell or serial console. Keep networking
+ * polling independently of Hush allocation, command parsing and UART waits. */
+static void ra80_ram_network_loop(void)
+{
+	int devices;
+
+	ra80_ramboot_magic = RA80_RAMBOOT_MAGIC_GUARD;
+	gd->flags |= GD_FLG_DISABLE_CONSOLE;
+	ra80_net_stage(RA80_NET_PREPARE, 3);
+	setenv("ethact", NULL);
+	setenv("ethprime", NULL);
+	if (setenv("ethrotate", "yes") || setenv("ipaddr", "192.168.1.1") ||
+	    setenv("netmask", "255.255.255.0"))
+		hang();
+	ra80_net_stage(RA80_NET_ENV_READY, 4);
+	devices = eth_initialize();
+	ra80_bootstage(RA80_STAGE_LINK);
+	if (devices <= 0)
+		hang();
+	HttpdStart();
+	if (!webfailsafe_is_running)
+		hang();
+	net_copy_ip(&net_httpd_ip, &net_ip);
+	for (;;)
+		httpd_poll();
+}
+#endif
+
 /* We come here after U-Boot is initialised and ready to process commands */
 void main_loop(void)
 {
@@ -101,6 +135,10 @@ void main_loop(void)
 #endif
 	ra80_bootstage(RA80_STAGE_MAIN);
 	ra80_runtime_stage(RA80_RT_MAIN);
+#if defined(CONFIG_LWIP_HTTPD) && defined(CONFIG_IPQ5018_XIAOMI_RA80)
+	if (ra80_ram_test)
+		ra80_ram_network_loop();
+#endif
 
 	bootstage_mark_name(BOOTSTAGE_ID_MAIN_LOOP, "main_loop");
 
@@ -130,30 +168,7 @@ void main_loop(void)
 #endif /* CONFIG_UPDATE_TFTP */
 
 #ifdef CONFIG_LWIP_HTTPD
-#ifdef CONFIG_IPQ5018_XIAOMI_RA80
-	if (ra80_ramboot_magic == RA80_RAMBOOT_MAGIC_ARMED) {
-		ra80_ramboot_magic = RA80_RAMBOOT_MAGIC_GUARD;
-		printf("RA80DBG: RAM-only marker accepted; auto-starting Webfailsafe\n");
-#ifndef CONFIG_IPQ40XX
-		/* RAM test: ignore stale environment interface preferences.
-		 * This changes RAM environment only; never saveenv. */
-		setenv("ethact", NULL);
-		setenv("ethprime", NULL);
-		setenv("ethrotate", "yes");
-		printf("RA80DBG: RAM test ethernet rotation enabled; no fixed device\n");
-		eth_initialize();
-#endif
-		ra80_bootstage(RA80_STAGE_LINK);
-		if (run_command("httpd", 0) || !webfailsafe_is_running) {
-			puts("RA80DBG: RAM HTTP start failed; automatic boot suppressed\n");
-			hang();
-		}
-		ra80_net_stage(RA80_NET_HTTP_RETURN, 6);
-	} else
-#endif
-	{
-		btn_check_press();
-	}
+	btn_check_press();
 #endif
 #ifdef CONFIG_BOARD_DISPLAY_NAME
 	const char *env_config = getenv("config_name");

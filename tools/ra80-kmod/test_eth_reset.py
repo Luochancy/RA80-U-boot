@@ -80,7 +80,7 @@ static void reset_fake(unsigned clear,int link) {
 '''
 tests = r'''
 int main(void) {
-    const unsigned codes[]={11,14,3,4,5,6,7,8,9,10,12,13,0,15};
+    const unsigned codes[]={11,3,4,5,6,7,14,8,9,10,12,13,0,15};
     for(unsigned i=0;i<14;i++) {
         ra80_net_stage(i+1,codes[i]);
         assert(stage_code==codes[i] && stage_writes==i+1);
