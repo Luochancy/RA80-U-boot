@@ -30,6 +30,30 @@ starts Webfailsafe, so the complete test does not require holding Reset while
 stock Linux is running. A normal or flashed image keeps the original
 button-controlled behavior.
 
+## Early LED handoff diagnostics
+
+Watch the LEDs continuously or record a video before running insmod.
+Linux first turns both off for 500 ms, shows network yellow for one second,
+then network blue during the countdown. Before SMP stop it shows network
+white; after SMP stop returns it shows network yellow again. The system LED
+remains off during these Linux stages.
+
+The first instructions at U-Boot reset show system yellow / network off,
+then system blue / network off after save_boot_params returns, then system
+blue / network yellow after CPU setup and before _main. Each assembly stage
+has a bounded busy-loop dwell; its duration is not calibrated. These stages
+use direct TLMM writes, without stack, FDT, environment or serial services.
+The Linux LED register values are restored on any recoverable failure.
+
+SSH disconnection alone does not establish a successful handoff. A persistent
+Linux-stage colour means the next boundary was not visibly reached. If
+colours appear inverted, report the actual sequence rather than interpreting
+the table. The router has no physical Ethernet jack indicator lamps.
+
+On Windows, check the extracted module with:
+`Get-FileHash .\ra80_ramboot_full.ko -Algorithm SHA256`
+and compare against inspection.txt.
+
 ## LED stage code
 
 The two physical LEDs are dual-colour. Each code is shown as
@@ -52,7 +76,7 @@ The two physical LEDs are dual-colour. Each code is shown as
 | `E` | blue / white | Ethernet initialization failed |
 | `F` | white / white | at least one Ethernet device is active |
 
-The front panel has 1 WAN and 3 LAN jacks. The stock Linux device tree exposes
+The front panel has 1 WAN and 4 LAN jacks. The stock Linux device tree exposes
 QCA8337 PHY addresses 0 through 4; the U-Boot switch count intentionally follows
 that MDIO topology.
 
@@ -61,7 +85,8 @@ that MDIO topology.
 1. Extract the Actions artifact and verify the SHA-256 for
    `ra80_ramboot_full.ko` against `inspection.txt`.
 2. Copy only `ra80_ramboot_full.ko` to `/tmp` on the router.
-3. Connect a computer by Ethernet, initially to LAN 1. Set it to
+3. Connect a computer by Ethernet, initially to LAN 1. Keep its current IP
+   until the SSH commands below have run. After SSH disconnects, set it to
    `192.168.1.2/24`, with gateway and DNS blank. Disable Wi-Fi and VPN.
 4. On the router, make sure no old stage module is loaded and confirm the stock
    vector:
@@ -69,10 +94,9 @@ that MDIO topology.
    ```sh
    rmmod ra80_stage_ethdiag 2>/dev/null
    devmem 0x4a920000 32
-   sha256sum /tmp/ra80_ramboot_full.ko
    ```
 
-   The vector must be `0xEA0000B8`, and the module hash must exactly match
+   The vector must be `0xEA0000B8`, and the module hash checked on the computer must exactly match
    `inspection.txt`. If either check differs, stop and power-cycle.
 
 5. Start the complete RAM-only handoff:
@@ -92,7 +116,7 @@ that MDIO topology.
    ```
 
    Open `http://192.168.1.1/` if ping succeeds. If there is no link, try the
-   other two LAN jacks and then WAN without power cycling, recording the LED
+   other three LAN jacks and then WAN without power cycling, recording the LED
    code for each result.
 
 7. Do not upload or flash anything from the Webfailsafe page during this test.
