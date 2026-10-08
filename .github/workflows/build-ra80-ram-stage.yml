@@ -77,7 +77,7 @@ jobs:
           KO="$(find /tmp/sdk/build_dir -type f -name ra80_stage_ethdiag.ko -print -quit)"
           test -n "$KO"
           test -s "$KO"
-          KERNEL_TREE="$(find /tmp/sdk/build_dir -type d -path '*/linux-ipq50xx_arm/linux-4.4.60' -print -quit)"
+          KERNEL_TREE="$(find /tmp/sdk/build_dir -type d -path '*/linux-ipq50xx_arm/linux-4.4-qsdk-11.4.0.5' -print -quit)"
           test -n "$KERNEL_TREE"
           grep -Fx '#define UTS_RELEASE "4.4.60"' "$KERNEL_TREE/include/generated/utsrelease.h"
           mkdir -p out
