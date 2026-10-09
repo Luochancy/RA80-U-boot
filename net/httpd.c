@@ -32,6 +32,8 @@
 #include "dhcpd.h"
 #endif
 
+DECLARE_GLOBAL_DATA_PTR;
+
 static int do_firmware_upgrade(const ulong size);
 static int do_uboot_upgrade(const ulong size);
 static int do_art_upgrade(const ulong size);
