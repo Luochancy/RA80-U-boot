@@ -7,6 +7,8 @@
 #include <common.h>
 #include <ra80_bootstage.h>
 #include <command.h>
+#include <image.h>
+#include <libfdt.h>
 #include <net.h>
 #include <asm/byteorder.h>
 #include "httpd.h"
@@ -139,8 +141,19 @@ static const char *fw_type_to_string(int fw_type) {
 
 int do_http_upgrade(const ulong size, const int upgrade_type) {
 	if (ra80_ram_test_active()) {
-		puts("RA80DBG: upgrade disabled in RAM-only diagnostic mode\n");
-		return -1;
+		if (upgrade_type != WEBFAILSAFE_UPGRADE_TYPE_INITRAMFS) {
+			puts("RA80DBG: flash upgrade disabled in RAM-only mode\n");
+			return -1;
+		}
+		/* Bound both upload and copy before reading a header or touching RAM. */
+		if (size < sizeof(struct fdt_header) || size > CONFIG_SYS_BOOTM_LEN ||
+		    size > CONFIG_SYS_SDRAM_END - UPLOAD_ADDR ||
+		    size > 0x4a800000UL - RAM_BOOT_ADDR ||
+		    fdt_check_header((void *)UPLOAD_ADDR) ||
+		    fdt_totalsize((void *)UPLOAD_ADDR) != size ||
+		    fdt_path_offset((void *)UPLOAD_ADDR, "/images") < 0 ||
+		    fdt_path_offset((void *)UPLOAD_ADDR, "/configurations") < 0)
+			return -1;
 	}
 	printChecksumMd5(UPLOAD_ADDR, size);
 	do_http_progress(WEBFAILSAFE_PROGRESS_UPGRADING);
@@ -680,7 +693,17 @@ static int do_initramfs_boot(const ulong size) {
 	print_upgrade_warning("INITRAMFS");
 	sprintf(buf, "bootm 0x%lx", RAM_BOOT_ADDR);
 
-	int ret = execute_command(buf);
+	int ret;
+	if (ra80_ram_test_active()) {
+		char address[24];
+		char *argv[] = { "bootm", address, NULL };
+		snprintf(address, sizeof(address), "%lx", RAM_BOOT_ADDR);
+		/* The RAM network loop never initialized Hush. Call bootm directly. */
+		ret = do_bootm(NULL, 0, 2, argv);
+		/* Successful kernel handoff cannot return. Retain HTTP on failure. */
+		return -1;
+	}
+	ret = execute_command(buf);
 	if (ret != 0) {
 		printf("\n* INITRAMFS boot failed *\n");
 		return -1;

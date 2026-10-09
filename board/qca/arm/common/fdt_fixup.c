@@ -12,6 +12,7 @@
  */
 
 #include <common.h>
+#include <ra80_bootstage.h>
 #include <asm/arch-qca-common/smem.h>
 #include <asm/arch-qca-common/scm.h>
 #include <jffs2/load_kernel.h>
@@ -1053,8 +1054,80 @@ void set_mtdids(void)
  * By default, u-boot will walk the dram bank info and populate the /memory
  * node; here, overwrite this behavior so we describe all of memory instead.
  */
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+static int ra80_ram_kernel_fdt(void *blob)
+{
+	u64 start = CONFIG_SYS_SDRAM_BASE, size = gd->ram_size;
+	int node, len, ret, chosen;
+	const char *compat, *name;
+	/* This path supports the RA80 board, not arbitrary FIT device trees. */
+	if (fdt_node_check_compatible(blob, 0, "xiaomi,ax3000") &&
+	    fdt_node_check_compatible(blob, 0, "xiaomi,ra80"))
+		return -FDT_ERR_BADVALUE;
+	ret = fdt_fixup_memory_banks(blob, &start, &size, 1);
+	if (ret)
+		return ret;
+	chosen = fdt_path_offset(blob, "/chosen");
+	if (chosen < 0)
+		return chosen;
+	ret = fdt_setprop_string(blob, chosen, "bootargs",
+		"console=ttyMSM0,115200n8 rdinit=/sbin/init coherent_pool=2M");
+	if (ret)
+		return ret;
+	ret = fdt_delprop(blob, chosen, "bootargs-append");
+	if (ret && ret != -FDT_ERR_NOTFOUND)
+		return ret;
+	ret = fdt_delprop(blob, chosen, "bootargs-override");
+	if (ret && ret != -FDT_ERR_NOTFOUND)
+		return ret;
+	/* U-Boot write guards do not survive kernel handoff. Disable storage
+	 * discovery in Linux's actual DTB, so initramfs cannot attach stock UBI.
+	 * Disable Wi-Fi too: calibration is unavailable without NAND access. */
+	for (node = fdt_next_node(blob, -1, NULL); node >= 0;
+	     node = fdt_next_node(blob, node, NULL)) {
+		int disable = 0, ethernet = 0, offset = 0;
+		compat = fdt_getprop(blob, node, "compatible", &len);
+		while (compat && offset < len) {
+			const char *entry = compat + offset;
+			int count = strnlen(entry, len - offset);
+			if (count == len - offset)
+				return -FDT_ERR_BADVALUE;
+			if (strstr(entry, "nand") || strstr(entry, "spi-nor") ||
+			    strstr(entry, "sdhci") || strstr(entry, "wcss") ||
+			    strstr(entry, "ath11k"))
+				disable = 1;
+			if (!strcmp(entry, "qcom,nss-dp"))
+				ethernet = 1;
+			offset += count + 1;
+		}
+		name = fdt_get_name(blob, node, NULL);
+		if (name && !strncmp(name, "wifi@", 5))
+			disable = 1;
+		if (disable) {
+			ret = fdt_setprop_string(blob, node, "status", "disabled");
+			if (ret)
+				return ret;
+		}
+		/* Keep Ethernet from waiting indefinitely for unavailable ART MACs. */
+		if (!ethernet)
+			continue;
+		ret = fdt_delprop(blob, node, "nvmem-cells");
+		if (ret && ret != -FDT_ERR_NOTFOUND)
+			return ret;
+		ret = fdt_delprop(blob, node, "nvmem-cell-names");
+		if (ret && ret != -FDT_ERR_NOTFOUND)
+			return ret;
+	}
+	return node == -FDT_ERR_NOTFOUND ? 0 : node;
+}
+#endif
+
 int ft_board_setup(void *blob, bd_t *bd)
 {
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+	if (ra80_ram_test_active())
+		return ra80_ram_kernel_fdt(blob);
+#endif
 	u64 memory_start = CONFIG_SYS_SDRAM_BASE;
 	u64 memory_size = gd->ram_size;
 #ifdef CONFIG_IPQ_FDT_FIXUP

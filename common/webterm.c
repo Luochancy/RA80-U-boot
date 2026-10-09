@@ -154,8 +154,8 @@ int webterm_get_output(char *buf, int size, int since) {
 }
 
 void webterm_execute_command(const char *cmd) {
-	if (ra80_ram_test_active()) {
-		webterm_capture_output("Commands disabled in RAM-only diagnostic mode\n");
+	if (ra80_ram_test_active() && strcmp(cmd, "reset")) {
+		webterm_capture_output("Only reset is allowed in RAM-only mode\n");
 		return;
 	}
 	webterm_abort_requested = 0;
@@ -166,6 +166,10 @@ void webterm_execute_command(const char *cmd) {
 		webterm_pending_cmd[sizeof(webterm_pending_cmd) - 1] = '\0';
 		webterm_has_pending_cmd = 1;
 	} else {
+		if (ra80_ram_test_active()) {
+			do_reset(NULL, 0, 0, NULL);
+			return;
+		}
 		run_command(cmd, 0);
 		if (webterm_line_pos > 0) webterm_flush_line();
 	}
@@ -173,8 +177,14 @@ void webterm_execute_command(const char *cmd) {
 
 int webterm_run_pending_command(void) {
 	if (ra80_ram_test_active()) {
+		if (!webterm_has_pending_cmd)
+			return 0;
 		webterm_has_pending_cmd = 0;
-		return 0;
+		if (strcmp(webterm_pending_cmd, "reset"))
+			return 0;
+		/* Direct reset needs no Hush/CLI initialization or flash command. */
+		do_reset(NULL, 0, 0, NULL);
+		return 1;
 	}
 	if (!webterm_has_pending_cmd)
 		return 0;

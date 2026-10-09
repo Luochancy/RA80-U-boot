@@ -1,5 +1,39 @@
 # RA80 RAM-only startup-path review
 
+## RAM initramfs and Web reset enabled after hardware HTTP success
+
+The user confirmed F and functioning HTTP pages for d54a758, then explicitly
+requested enabling memory boot and Web reset. RAM mode now allows only the
+INITRAMFS upload type and the exact reset command. Both dispatch directly to
+do_bootm/do_reset without entering Hush (the direct RAM network entry bypasses
+CLI initialization). Flash update types and arbitrary terminal commands remain
+blocked. Upload header/size/RAM-bound/FIT-node checks precede RAM copying.
+Returning from a kernel handoff is treated as failure, so HTTP does not execute
+an automatic reset after failed RAM boot.
+
+The original board FDT setup generated MTD partitions and invoked NAND/QPIC
+fixups. RAM mode now returns through a separate checked board-tree fixup before
+these calls. The Linux DTB must identify Xiaomi AX3000/RA80; memory is updated
+to actual DRAM, flash-related chosen arguments removed/replaced, NAND and MMC
+controllers disabled, and Wi-Fi/WCSS disabled because ART is unavailable.
+Only Ethernet nvmem MAC dependencies are removed; unrelated calibration cells
+are preserved. Generic Ethernet fixup still supplies the temporary MACs.
+These restrictions apply to this trusted initramfs test; they do not sandbox a
+malicious kernel capable of direct MMIO. No flash installation is authorized.
+
+Candidate inspected locally: crypt0nX/openwrt-xiaomi-ax3000 release v1.0.1,
+initramfs-uImage.itb SHA256
+b507a7981582cfdf9f04396bf82eec5b2589d9ff60fb9b9dc3812833d8fa6322.
+FIT size 16051344, ARM64 Linux 6.12.62, LZMA kernel size 16022043,
+expanded kernel 26617864 bytes at entry/load 0x41000000, ending 0x42962608;
+FIT copied at 0x44000000; U-Boot reserved 0x4a800000..0x4aa00000.
+Configuration config@mp02.1. DTB flash controller /soc@0/spi@79b0000 was
+enabled with flash root arguments; these are disabled by the RAM board fixup
+after FIT verification, rather than modifying FIT bytes/hashes.
+Host tests extract production gate/reset/FDT functions and use real libfdt.
+Real ARM64 kernel handoff still requires hardware testing; HTTP/F alone does
+not prove a kernel boot.
+
 ## Steady C follow-up (after direct RAM entry)
 
 The user reached C with the direct-network payload. C is emitted after

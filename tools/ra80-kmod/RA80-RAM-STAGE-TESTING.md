@@ -71,7 +71,12 @@ insmod /tmp/ra80_ramboot_full.ko execute=1
 5. 报告两灯最终状态、接的哪个口、ping/网页结果。然后断电重启回原厂。
 
 诊断模式跳过 preboot、自动 TFTP 更新和自动启动；网页启动失败保留灯码并停止。
-网页升级和网页命令执行已禁止。不要上传固件、执行 flash/nand/saveenv 等写入命令。
+RAM模式现在允许“内存启动”的FIT initramfs与网页“重启设备”。重启直接调用reset，
+内存启动直接调用bootm，均不依赖未初始化的Hush解析器。其他上传类型和终端命令仍被拒绝。
+上传镜像必须有完整FIT头、images/configurations节点，且不超过64MiB或RAM范围。
+内核DTB仅支持xiaomi,ax3000/xiaomi,ra80；RAM模式跳过原有闪存分区修正，
+禁用Linux NAND/MMC与Wi-Fi节点，删除UBI/rootfs附加启动参数。网络MAC依赖改为临时地址。
+这保持内核启动测试不访问原厂NAND，但此轮Wi-Fi/ART校准不可用。不要执行flash/nand/saveenv。
 本测试不写 NAND/MTD/APPSBL；模块只修改保留 RAM、LED 和交接所需状态。
 
 若 insmod 报错，不要继续交接，保留以下输出：
