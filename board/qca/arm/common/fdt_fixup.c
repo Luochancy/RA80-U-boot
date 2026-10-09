@@ -1063,7 +1063,7 @@ static int ra80_ram_kernel_fdt(void *blob)
 	/* This path supports the RA80 board, not arbitrary FIT device trees. */
 	if (fdt_node_check_compatible(blob, 0, "xiaomi,ax3000") &&
 	    fdt_node_check_compatible(blob, 0, "xiaomi,ra80"))
-		return -FDT_ERR_BADVALUE;
+		return -FDT_ERR_BADSTRUCTURE;
 	ret = fdt_fixup_memory_banks(blob, &start, &size, 1);
 	if (ret)
 		return ret;
@@ -1091,7 +1091,7 @@ static int ra80_ram_kernel_fdt(void *blob)
 			const char *entry = compat + offset;
 			int count = strnlen(entry, len - offset);
 			if (count == len - offset)
-				return -FDT_ERR_BADVALUE;
+				return -FDT_ERR_BADSTRUCTURE;
 			if (strstr(entry, "nand") || strstr(entry, "spi-nor") ||
 			    strstr(entry, "sdhci") || strstr(entry, "wcss") ||
 			    strstr(entry, "ath11k"))

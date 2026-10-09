@@ -25,7 +25,7 @@ Candidate inspected locally: crypt0nX/openwrt-xiaomi-ax3000 release v1.0.1,
 initramfs-uImage.itb SHA256
 b507a7981582cfdf9f04396bf82eec5b2589d9ff60fb9b9dc3812833d8fa6322.
 FIT size 16051344, ARM64 Linux 6.12.62, LZMA kernel size 16022043,
-expanded kernel 26617864 bytes at entry/load 0x41000000, ending 0x42962608;
+expanded kernel 26617864 bytes at entry/load 0x41000000, ending 0x42962808;
 FIT copied at 0x44000000; U-Boot reserved 0x4a800000..0x4aa00000.
 Configuration config@mp02.1. DTB flash controller /soc@0/spi@79b0000 was
 enabled with flash root arguments; these are disabled by the RAM board fixup

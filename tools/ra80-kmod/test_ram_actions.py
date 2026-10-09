@@ -43,7 +43,7 @@ int main(int argc,char **argv) {
  assert(!fdt_open_into(input,blob,sizeof(blob)));memory_result=-FDT_ERR_NOSPACE;
  assert(ra80_ram_kernel_fdt(blob)==-FDT_ERR_NOSPACE);memory_result=0;
  assert(!fdt_setprop_string(blob,0,"compatible","wrong,board"));
- assert(ra80_ram_kernel_fdt(blob)==-FDT_ERR_BADVALUE);
+ assert(ra80_ram_kernel_fdt(blob)==-FDT_ERR_BADSTRUCTURE);
  puts("PASS: actual kernel fixup disables NAND/MMC/Wi-Fi, removes flash bootargs, preserves Ethernet and unrelated nvmem, rejects errors/wrong boards");
 }
 '''
