@@ -103,6 +103,10 @@ static struct {
 } upload = { .packet_counter = 255 };
 
 static struct ra80_ram_upload ram_upload;
+/* Retain the last transfer counters after its connection closes. */
+static struct {
+	u32_t received, total, updated, log_mark;
+} ram_progress;
 
 static struct {
 	u32_t data_size;
@@ -121,6 +125,11 @@ static struct {
 } backup;
 
 int upgrade_status = 0;
+static const char * const upgrade_status_text[] = {
+	"idle", "verifying", "flashing", "type_mismatch", "rebooting",
+	"upgrade_done", "ram_boot_failed", "receiving", "upload_rejected",
+	"upload_aborted"
+};
 static char part_json_buf[PART_JSON_BUF_SIZE];
 static struct failsafe_httpd_state *hs_global;
 
@@ -183,9 +192,15 @@ static void httpd_state_reset(struct failsafe_httpd_state *hs) {
 	hs->ram_reply_pending = 0;
 	if (hs->owns_global) {
 		int done = upload.done, failed = upload.failed;
+		if (upload.ram_raw && upgrade_status == 7) {
+			upgrade_status = 9;
+			printf("RA80 RAM upload aborted: %u/%u bytes\n",
+				ram_progress.received, ram_progress.total);
+		}
 		hs->owns_global = 0;
 		hs_global = NULL;
-		tcp_setprio(hs->pcb, TCP_PRIO_MIN);
+		if (hs->pcb)
+			tcp_setprio(hs->pcb, TCP_PRIO_MIN);
 		memset(&upload, 0, sizeof(upload));
 		memset(&ram_upload, 0, sizeof(ram_upload));
 		upload.done = done;
@@ -437,6 +452,7 @@ static void httpd_ram_upload_reply(struct failsafe_httpd_state *hs, const char *
 	/* Only this connection's fully acknowledged reply may arm RAM boot. */
 	upload.done = 0;
 	if (failed) {
+		upgrade_status = 8;
 		printf("RA80 RAM upload rejected: %s\n", response);
 		net_boot_file_size = 0;
 		webfailsafe_ready_for_upgrade = 0;
@@ -475,6 +491,9 @@ static void httpd_handle_ram_upload(struct failsafe_httpd_state *hs, const char 
 	if (limit > 0x4a800000UL - RAM_BOOT_ADDR)
 		limit = 0x4a800000UL - RAM_BOOT_ADDR;
 	ret = ra80_ram_upload_feed(&ram_upload, data, len, limit, &offset, &count);
+	ram_progress.received = ram_upload.received;
+	ram_progress.total = ram_upload.length;
+	ram_progress.updated = get_timer(0);
 	if (ret < 0) {
 		const char *response =
 			"HTTP/1.0 400 Bad Request\r\nConnection: close\r\n\r\nInvalid RAM upload request; use the memory boot page.";
@@ -490,6 +509,12 @@ static void httpd_handle_ram_upload(struct failsafe_httpd_state *hs, const char 
 	if (count) {
 		memcpy(webfailsafe_data_pointer, data + offset, count);
 		webfailsafe_data_pointer += count;
+		if (!ram_progress.log_mark ||
+		    ram_progress.received - ram_progress.log_mark >= 1024 * 1024) {
+			printf("RA80 RAM receiving: %u/%u bytes\n",
+				ram_progress.received, ram_progress.total);
+			ram_progress.log_mark = ram_progress.received;
+		}
 	}
 	if (ret != RA80_UPLOAD_DONE)
 		return;
@@ -502,6 +527,7 @@ static void httpd_handle_ram_upload(struct failsafe_httpd_state *hs, const char 
 		return;
 	}
 	net_boot_file_size = ram_upload.length;
+	upgrade_status = 1;
 	printf("RA80 RAM upload complete: %lu bytes; FIT size verified\n", (ulong)net_boot_file_size);
 	httpd_ram_upload_reply(hs, "HTTP/1.0 200 OK\r\nConnection: close\r\n\r\nRAM image received and verified.", 0);
 }
@@ -543,9 +569,23 @@ static void httpd_send_static(struct failsafe_httpd_state *hs, const char *data,
 }
 
 static void httpd_handle_upgrade_status(struct failsafe_httpd_state *hs) {
-	static const char *status_text[] = {"idle", "verifying", "flashing", "type_mismatch", "rebooting", "upgrade_done", "ram_boot_failed"};
 	static char resp[128];
-	int len = sprintf(resp, "HTTP/1.0 200 OK\r\nCache-Control: no-cache\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n%s", status_text[upgrade_status]);
+	int len = sprintf(resp, "HTTP/1.0 200 OK\r\nCache-Control: no-cache\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n%s", upgrade_status_text[upgrade_status]);
+	httpd_send_static(hs, resp, len);
+}
+
+static void httpd_handle_ram_status(struct failsafe_httpd_state *hs)
+{
+	static char resp[384];
+	unsigned int window = hs_global && upload.ram_raw ?
+		hs_global->pcb->rcv_wnd : 0;
+	int len = sprintf(resp,
+		"HTTP/1.0 200 OK\r\nCache-Control: no-cache\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n"
+		"{\"state\":\"%s\",\"received\":%u,\"total\":%u,\"inactive_ms\":%u,\"tcp_window\":%u,\"rx_buffers\":%u}",
+		upgrade_status_text[upgrade_status], ram_progress.received,
+		ram_progress.total, ram_progress.total ?
+		(unsigned int)get_timer(ram_progress.updated) : 0,
+		window, (unsigned int)PKTBUFSRX);
 	httpd_send_static(hs, resp, len);
 }
 
@@ -1659,6 +1699,10 @@ static err_t httpd_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t er
 				httpd_handle_upgrade_status(hs);
 				break;
 			}
+			if (strncmp(&data[4], "/ramboot_status", 15) == 0 && data[19] == ISO_space) {
+				httpd_handle_ram_status(hs);
+				break;
+			}
 			if (strncmp(&data[4], "/partitions", 11) == 0 &&
 				data[15] == ISO_space) {
 				httpd_handle_partitions(hs);
@@ -1699,13 +1743,15 @@ static err_t httpd_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t er
 				hs->state = STATE_UPLOAD_REQUEST;
 				hs->owns_global = 1;
 				hs_global = hs;
+				tcp_setprio(pcb, TCP_PRIO_NORMAL);
 				memset(&upload, 0, sizeof(upload));
 				memset(&ram_upload, 0, sizeof(ram_upload));
+				memset(&ram_progress, 0, sizeof(ram_progress));
 				upload.ram_raw = 1;
 				webfailsafe_upgrade_type = WEBFAILSAFE_UPGRADE_TYPE_INITRAMFS;
 				webfailsafe_auto_reboot_enabled = 0;
 				webfailsafe_backup_avail_enabled = 0;
-				upgrade_status = 1;
+				upgrade_status = 7;
 				webfailsafe_data_pointer = (u8_t *)UPLOAD_ADDR;
 				httpd_handle_ram_upload(hs, data, data_len);
 				break;
@@ -1779,6 +1825,8 @@ static void httpd_err(void *arg, err_t err) {
 	if (hs) {
 		if (hs == hs_global)
 			hs_global = NULL;
+		/* lwIP has already freed the PCB before invoking its err callback. */
+		hs->pcb = NULL;
 		httpd_state_reset(hs);
 		free(hs);
 	}
@@ -1964,7 +2012,9 @@ void failsafe_httpd_poll(void) {
 #if defined(CONFIG_IPQ5332) || defined(CONFIG_IPQ9574)
 	link_changed = eth_check_link_change();
 #else
-	eth_check_link_change();
+	/* Do not block packet polling or reset DMA during an active RAM upload. */
+	if (!(ra80_ram_test_active() && hs_global && upload.ram_raw))
+		eth_check_link_change();
 #endif
 
 	if (!eth_is_active(eth_get_dev())) {

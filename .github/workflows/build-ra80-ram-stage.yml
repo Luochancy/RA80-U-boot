@@ -48,6 +48,7 @@ jobs:
           python3 tools/ra80-kmod/test_switch_init.py | tee diagnostics/switch-regression.txt
           python3 tools/ra80-kmod/test_ram_actions.py | tee diagnostics/ram-actions-regression.txt
           python3 tools/ra80-kmod/test_ram_upload.py | tee diagnostics/ram-upload-regression.txt
+          python3 tools/ra80-kmod/test_rx_poll.py | tee diagnostics/rx-poll-regression.txt
           ../staging_dir/toolchain-arm_cortex-a7_gcc-5.2.0_musl-1.1.16_eabi/bin/arm-openwrt-linux-nm -S --size-sort u-boot > diagnostics/symbol-sizes.txt
           python3 tools/ra80-kmod/verify_bootstages.py u-boot.bin u-boot.map | tee diagnostics/bootstage-verification.txt
           # The final ELF is stripped; use the symbol address from its link map.
@@ -112,6 +113,7 @@ jobs:
           cp diagnostics/switch-regression.txt out/
           cp diagnostics/ram-actions-regression.txt out/
           cp diagnostics/ram-upload-regression.txt out/
+          cp diagnostics/rx-poll-regression.txt out/
           cp diagnostics/symbol-sizes.txt out/
           cp u-boot.map out/
           cp .config out/uboot.config

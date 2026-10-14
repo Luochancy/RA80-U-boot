@@ -28,6 +28,8 @@
 #define CONFIG_SYS_VSNPRINTF
 #ifdef CONFIG_IPQ5018_XIAOMI_RA80
 #define CONFIG_DISABLE_CONSOLE
+/* A single 8-MSS TCP burst must fit while the polling CPU services MDIO. */
+#define CONFIG_SYS_RX_ETH_BUFFER 32
 #endif
 
 /*

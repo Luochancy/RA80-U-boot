@@ -32,6 +32,8 @@ static unsigned char memory[65536];
 struct failsafe_httpd_state { int state; unsigned long last_activity; u8_t *dataptr; ulong upload,upload_total; int owns_global; unsigned ram_reply_pending; void *pcb; };
 static struct { int done,failed,ram_raw,packet_counter; } upload;
 static struct ra80_ram_upload ram_upload;
+static struct { u32_t received,total,updated,log_mark; } ram_progress;
+static int upgrade_status;
 static struct { int unused; } backup;
 static struct failsafe_httpd_state *hs_global;
 static char *boundary_value;
@@ -53,6 +55,7 @@ source='\n'.join(function('failsafe/failsafe_httpd.c',sig) for sig in [
 tests=r'''
 static void begin(struct failsafe_httpd_state *hs){
  memset(hs,0,sizeof(*hs));memset(&upload,0,sizeof(upload));memset(&ram_upload,0,sizeof(ram_upload));
+ memset(&ram_progress,0,sizeof(ram_progress));upgrade_status=7;
  memset(memory,0xa5,sizeof(memory));hs->owns_global=1;hs_global=hs;upload.ram_raw=1;
  webfailsafe_data_pointer=memory;net_boot_file_size=0;webfailsafe_ready_for_upgrade=0;replies=0;
 }
@@ -77,6 +80,7 @@ int main(void){
   assert(replies==1 && strstr(last_response,"200 OK") && net_boot_file_size==fit_size);
   assert(!memcmp(memory,fit,fit_size) && webfailsafe_data_pointer==memory+fit_size);
   assert(memory[fit_size]==0xa5 && !upload.done && hs.owns_global && hs_global==&hs);
+  assert(upgrade_status==1 && ram_progress.received==fit_size && ram_progress.total==fit_size);
   assert(!httpd_ram_reply_acked(&other,5000) && !webfailsafe_ready_for_upgrade);
   unsigned pending=hs.ram_reply_pending;assert(pending>1);
   assert(httpd_ram_reply_acked(&hs,1)==1 && hs.ram_reply_pending==pending-1 && !webfailsafe_ready_for_upgrade);
@@ -87,6 +91,7 @@ int main(void){
  assert(replies==1 && !memcmp(memory,fit,fit_size));
  begin(&hs);httpd_handle_ram_upload(&hs,wire,total-1);assert(!replies && !net_boot_file_size);
  httpd_state_reset(&hs);assert(!hs_global && !webfailsafe_ready_for_upgrade);
+ assert(upgrade_status==9 && ram_progress.received==fit_size-1 && ram_progress.total==fit_size);
  begin(&hs);httpd_handle_ram_upload(&hs,wire,total);httpd_state_reset(&hs);
  assert(!httpd_ram_reply_acked(&hs,5000) && !webfailsafe_ready_for_upgrade);
  puts("PASS: actual RAM handler accepts every header/body split and bytewise input, copies only exact FIT bytes, cancels truncation/disconnect, and arms only after the owner response is fully ACKed");
@@ -97,6 +102,7 @@ int main(void){
  ((struct fdt_header *)fit)->totalsize=cpu_to_fdt32(fit_size+4);memcpy(body,fit,fit_size);
  begin(&hs);httpd_handle_ram_upload(&hs,wire,total);
  assert(strstr(last_response,"422 Unprocessable") && !hs.owns_global && !hs.ram_reply_pending && !webfailsafe_ready_for_upgrade);
+ assert(upgrade_status==8 && ram_progress.received==fit_size);
  begin(&hs);const char *big="POST /ramboot HTTP/1.1\r\nContent-Type: application/octet-stream\r\nContent-Length: 65537\r\n\r\n";
  httpd_handle_ram_upload(&hs,big,strlen(big));assert(strstr(last_response,"413 Payload") && memory[0]==0xa5);
  const char *bad[]={

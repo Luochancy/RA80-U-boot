@@ -712,7 +712,11 @@ unsigned long get_rootfs_1_end_block(void)  { return PART_END_BLOCK("rootfs_1");
  * Network - PHY link status monitoring and auto re-initialization
  * ----------------------------------------------------------------------- */
 
+#ifdef CONFIG_IPQ5018_XIAOMI_RA80
+#define LINK_CHECK_INTERVAL	1000
+#else
 #define LINK_CHECK_INTERVAL	100
+#endif
 #define PHY_SPEC_STATUS		17
 #define PHY_LINK_PASS		0x0400
 
@@ -784,6 +788,15 @@ int eth_check_link_change(void) {
 				}
 			}
 		}
+	}
+#elif defined(CONFIG_IPQ5018_XIAOMI_RA80)
+	/* RA80 has a GEPHY at MDIO0:7 and QCA83xx PHYs at MDIO1:0..4.
+	 * Probing all 64 addresses stalls the single-threaded packet receiver. */
+	if (read_phy_link("IPQ MDIO0", 7))
+		link_port = 7;
+	for (i = 0; i < 5 && link_port < 0; i++) {
+		if (read_phy_link("IPQ MDIO1", i))
+			link_port = PHY_MAX_ADDR + i;
 	}
 #elif defined(CONFIG_IPQ5018)
 	static const char * const mdio_bus[] = {"IPQ MDIO0", "IPQ MDIO1"};

@@ -116,6 +116,9 @@ function pollUpgradeStatus() {
 	function check() {
 		if (done) return;
 		fetch('/upgrade_status').then(function(r) { return r.text(); }).then(function(s) {
+			if (s === 'receiving') { showStep(1, '正在接收文件...'); return setTimeout(check, 1000); }
+			if (s === 'upload_aborted') { done = 1; return showFail('上传连接已中断，请重新上传。'); }
+			if (s === 'upload_rejected') { done = 1; return showFail('上传内容被拒绝，请查看终端详情。'); }
 			if (s === 'type_mismatch') { done = 1; return showFail('固件类型或内容校验失败，请查看终端详情。'); }
 			if (s === 'ram_boot_failed') { done = 1; return showFail('内存启动未完成，bootm 已返回；请查看终端详情。'); }
 			if (s === 'rebooting') { done = 1; return pingDevice(); }
