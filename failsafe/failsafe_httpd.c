@@ -502,7 +502,7 @@ static void httpd_handle_ram_upload(struct failsafe_httpd_state *hs, const char 
 		return;
 	}
 	net_boot_file_size = ram_upload.length;
-	printf("RA80 RAM upload complete: %lu bytes; FIT size verified\n", net_boot_file_size);
+	printf("RA80 RAM upload complete: %lu bytes; FIT size verified\n", (ulong)net_boot_file_size);
 	httpd_ram_upload_reply(hs, "HTTP/1.0 200 OK\r\nConnection: close\r\n\r\nRAM image received and verified.", 0);
 }
 
