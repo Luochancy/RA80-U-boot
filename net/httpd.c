@@ -149,13 +149,17 @@ int do_http_upgrade(const ulong size, const int upgrade_type) {
 		}
 		/* Bound both upload and copy before reading a header or touching RAM. */
 		if (size < sizeof(struct fdt_header) || size > CONFIG_SYS_BOOTM_LEN ||
-		    size > CONFIG_SYS_SDRAM_END - UPLOAD_ADDR ||
+		    size > CONFIG_SYS_SDRAM_END - RA80_RAM_UPLOAD_ADDR ||
 		    size > 0x4a800000UL - RAM_BOOT_ADDR ||
-		    fdt_check_header((void *)UPLOAD_ADDR) ||
-		    fdt_totalsize((void *)UPLOAD_ADDR) != size ||
-		    fdt_path_offset((void *)UPLOAD_ADDR, "/images") < 0 ||
-		    fdt_path_offset((void *)UPLOAD_ADDR, "/configurations") < 0)
+		    fdt_check_header((void *)RA80_RAM_UPLOAD_ADDR) ||
+		    fdt_totalsize((void *)RA80_RAM_UPLOAD_ADDR) != size ||
+		    fdt_path_offset((void *)RA80_RAM_UPLOAD_ADDR, "/images") < 0 ||
+		    fdt_path_offset((void *)RA80_RAM_UPLOAD_ADDR, "/configurations") < 0)
 			return -1;
+		/* Already at RAM_BOOT_ADDR: never stage into the stock Q6 region. */
+		printChecksumMd5(RA80_RAM_UPLOAD_ADDR, size);
+		do_http_progress(WEBFAILSAFE_PROGRESS_UPGRADING);
+		return do_initramfs_boot(size);
 	}
 	printChecksumMd5(UPLOAD_ADDR, size);
 	do_http_progress(WEBFAILSAFE_PROGRESS_UPGRADING);

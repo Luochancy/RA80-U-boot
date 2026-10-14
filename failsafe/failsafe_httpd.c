@@ -484,10 +484,10 @@ static void httpd_handle_ram_upload(struct failsafe_httpd_state *hs, const char 
 	ulong offset, count, limit = CONFIG_SYS_BOOTM_LEN;
 	u64 ram_end = CONFIG_SYS_SDRAM_END;
 	int ret;
-	if (ram_end <= UPLOAD_ADDR)
+	if (ram_end <= RA80_RAM_UPLOAD_ADDR)
 		limit = 0;
-	else if (ram_end - UPLOAD_ADDR < limit)
-		limit = ram_end - UPLOAD_ADDR;
+	else if (ram_end - RA80_RAM_UPLOAD_ADDR < limit)
+		limit = ram_end - RA80_RAM_UPLOAD_ADDR;
 	if (limit > 0x4a800000UL - RAM_BOOT_ADDR)
 		limit = 0x4a800000UL - RAM_BOOT_ADDR;
 	ret = ra80_ram_upload_feed(&ram_upload, data, len, limit, &offset, &count);
@@ -518,12 +518,22 @@ static void httpd_handle_ram_upload(struct failsafe_httpd_state *hs, const char 
 	}
 	if (ret != RA80_UPLOAD_DONE)
 		return;
-	if (fdt_check_header((void *)UPLOAD_ADDR) ||
-	    fdt_totalsize((void *)UPLOAD_ADDR) != ram_upload.length ||
-	    fdt_path_offset((void *)UPLOAD_ADDR, "/images") < 0 ||
-	    fdt_path_offset((void *)UPLOAD_ADDR, "/configurations") < 0) {
+	ret = fdt_check_header((void *)RA80_RAM_UPLOAD_ADDR);
+	printf("RA80 RAM FIT header: addr=%08lx magic=%08x size=%u received=%lu check=%d\n",
+		(ulong)RA80_RAM_UPLOAD_ADDR, fdt_magic((void *)RA80_RAM_UPLOAD_ADDR),
+		fdt_totalsize((void *)RA80_RAM_UPLOAD_ADDR), ram_upload.received, ret);
+	if (ret || fdt_totalsize((void *)RA80_RAM_UPLOAD_ADDR) != ram_upload.length) {
 		httpd_ram_upload_reply(hs,
 			"HTTP/1.0 422 Unprocessable Content\r\nConnection: close\r\n\r\nInvalid FIT or FIT total size differs from received image size.", 1);
+		return;
+	}
+	ret = fdt_path_offset((void *)RA80_RAM_UPLOAD_ADDR, "/images");
+	if (ret >= 0)
+		ret = fdt_path_offset((void *)RA80_RAM_UPLOAD_ADDR, "/configurations");
+	if (ret < 0) {
+		printf("RA80 RAM FIT nodes failed: %d\n", ret);
+		httpd_ram_upload_reply(hs,
+			"HTTP/1.0 422 Unprocessable Content\r\nConnection: close\r\n\r\nFIT images/configurations nodes are missing or damaged.", 1);
 		return;
 	}
 	net_boot_file_size = ram_upload.length;
@@ -581,11 +591,11 @@ static void httpd_handle_ram_status(struct failsafe_httpd_state *hs)
 		hs_global->pcb->rcv_wnd : 0;
 	int len = sprintf(resp,
 		"HTTP/1.0 200 OK\r\nCache-Control: no-cache\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n"
-		"{\"state\":\"%s\",\"received\":%u,\"total\":%u,\"inactive_ms\":%u,\"tcp_window\":%u,\"rx_buffers\":%u}",
+		"{\"state\":\"%s\",\"received\":%u,\"total\":%u,\"inactive_ms\":%u,\"tcp_window\":%u,\"rx_buffers\":%u,\"address\":\"0x%08lx\"}",
 		upgrade_status_text[upgrade_status], ram_progress.received,
 		ram_progress.total, ram_progress.total ?
 		(unsigned int)get_timer(ram_progress.updated) : 0,
-		window, (unsigned int)PKTBUFSRX);
+		window, (unsigned int)PKTBUFSRX, (ulong)RA80_RAM_UPLOAD_ADDR);
 	httpd_send_static(hs, resp, len);
 }
 
@@ -1752,7 +1762,7 @@ static err_t httpd_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t er
 				webfailsafe_auto_reboot_enabled = 0;
 				webfailsafe_backup_avail_enabled = 0;
 				upgrade_status = 7;
-				webfailsafe_data_pointer = (u8_t *)UPLOAD_ADDR;
+				webfailsafe_data_pointer = (u8_t *)RA80_RAM_UPLOAD_ADDR;
 				httpd_handle_ram_upload(hs, data, data_len);
 				break;
 			}

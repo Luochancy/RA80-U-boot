@@ -2,6 +2,25 @@
 
 ## Sustained receive follow-up (2026-10-15)
 
+An ACK-batched complete upload on d48db31 subsequently finished after 466.69s
+and returned HTTP 422. Thus there is also a post-receive FIT rejection, not
+just the short client timeout. The exact same candidate passes fdt_check_header
+and both node lookups when executed in the delivered ARM binaries under
+emulation (header=0, images=0x60, configurations=0xd4c4ac). No kernel started.
+
+The stock DTB marks 0x4b000000..0x4c400000 as Q6 code/data, overlapping the
+generic HTTP upload address. A chainload from stock Linux has not established
+that Q6 is stopped, so that address cannot be treated as an unused staging
+buffer. RAM-only uploads now go directly to RAM_BOOT_ADDR 0x44000000, bounded
+by SDRAM, BOOTM_LEN and the 0x4a800000 reservation. RAM do_http_upgrade validates
+and boots from that same address without copying through Q6 memory. Normal
+flash-mode upload/copy behavior is preserved. The address overlap is certain;
+whether a coprocessor overwrite caused this observed 422 is not yet proven.
+Completion diagnostics now print received length, in-memory FIT magic/size,
+header-check return value, and a separate node-lookup failure. The status
+endpoint also reports the staging address. These changes do not stop Q6 or
+claim a hardware DMA sandbox. Kernel FIT hashes remain required by bootm.
+
 Hardware version d48db31 accepts a 40-byte invalid FIT immediately (HTTP 422),
 but the 13,944,692-byte candidate times out. Even curl --limit-rate 256k reports
 only 2,817,899 bytes submitted to the PC socket after 90 seconds. This number

@@ -25,6 +25,7 @@ typedef uint32_t u32_t;
 #define RAM_BOOT_ADDR 0x44000000UL
 static unsigned char memory[65536];
 #define UPLOAD_ADDR ((ulong)memory)
+#define RA80_RAM_UPLOAD_ADDR UPLOAD_ADDR
 #define CONFIG_SYS_SDRAM_END ((u64)UPLOAD_ADDR + sizeof(memory))
 #define STATE_NONE 0
 #define STATE_FILE_REQUEST 1

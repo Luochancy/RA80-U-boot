@@ -96,6 +96,10 @@ enum firmware_type_enum {
 #define RAM_BOOT_ADDR								(unsigned long) 0x44000000
 #endif
 
+/* A RAM chainload can inherit a live Q6 using stock 0x4b000000 memory.
+ * Receive directly into the bounded RAM boot area, below U-Boot/reservations. */
+#define RA80_RAM_UPLOAD_ADDR RAM_BOOT_ADDR
+
 /* extract file name from oem binary */
 #define HLOS_NAME									"hlos-0cc33b23252699d495d79a843032498bfa593aba"
 #define ROOTFS_NAME									"rootfs-f3c50b484767661151cfb641e2622703e45020fe"

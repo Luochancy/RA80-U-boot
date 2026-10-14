@@ -65,12 +65,13 @@ struct fdt_header { uint32_t words[10]; };
 #define CONFIG_SYS_SDRAM_END 0x50000000UL
 #define UPLOAD_ADDR 0x4b000000UL
 #define RAM_BOOT_ADDR 0x44000000UL
+#define RA80_RAM_UPLOAD_ADDR RAM_BOOT_ADDR
 #define WEBFAILSAFE_PROGRESS_UPGRADING 2
 enum { WEBFAILSAFE_UPGRADE_TYPE_FIRMWARE=1,WEBFAILSAFE_UPGRADE_TYPE_UBOOT,WEBFAILSAFE_UPGRADE_TYPE_ART,WEBFAILSAFE_UPGRADE_TYPE_IMG,WEBFAILSAFE_UPGRADE_TYPE_CDT,WEBFAILSAFE_UPGRADE_TYPE_MIBIB,WEBFAILSAFE_UPGRADE_TYPE_PTABLE,WEBFAILSAFE_UPGRADE_TYPE_INITRAMFS };
 static int ram=1,header_error,path_error,copies,boots,flashcalls;
 static ulong totalsize=1000;
 static int ra80_ram_test_active(void){return ram;}
-static int fdt_check_header(void *p){assert((ulong)p==UPLOAD_ADDR);return header_error;}
+static int fdt_check_header(void *p){assert((ulong)p==RA80_RAM_UPLOAD_ADDR);return header_error;}
 static ulong fdt_totalsize(void *p){return totalsize;}
 static int fdt_path_offset(void *p,const char *name){return path_error?-1:0;}
 static void printChecksumMd5(ulong p,ulong size){}
@@ -91,9 +92,10 @@ int main(void) {
  path_error=1;assert(do_http_upgrade(1000,8)==-1);path_error=0;
  totalsize=999;assert(do_http_upgrade(1000,8)==-1);totalsize=1000;
  assert(!copies && !boots);
- assert(do_http_upgrade(1000,8)==-1 && copies==1 && boots==1 && !flashcalls);
+ assert(do_http_upgrade(1000,8)==-1 && copies==0 && boots==1 && !flashcalls);
  ram=0;assert(do_http_upgrade(1000,1)==0 && flashcalls==1);
- puts("PASS: actual RAM upload gate allows only bounded FIT initramfs; flash/malformed/oversize inputs cause no copy or flash call");
+ assert(do_http_upgrade(1000,8)==-1 && copies==1 && boots==2);
+ puts("PASS: actual RAM upload gate validates/boots directly from the safe RAM area, avoids Q6/flash writes, and preserves normal-mode copy behavior");
 }
 '''
 boot=common+r'''
