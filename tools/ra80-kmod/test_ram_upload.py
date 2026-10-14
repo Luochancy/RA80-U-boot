@@ -19,6 +19,7 @@ prefix=r'''
 typedef unsigned long ulong;
 typedef uint64_t u64;
 typedef unsigned char u8_t;
+typedef uint32_t u32_t;
 #include "ra80_ram_upload.h"
 #define CONFIG_SYS_BOOTM_LEN 0x4000000UL
 #define RAM_BOOT_ADDR 0x44000000UL
