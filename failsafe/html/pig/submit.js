@@ -57,6 +57,16 @@ function getAutoRebootPref() {
 	}
 }
 
+function makeUploadRequest(form, ramOnly) {
+	var fileInput = form.querySelector('input[type=file]');
+	if (ramOnly) {
+		if (fileInput.name !== 'initramfs')
+			throw new Error('RAM 模式只允许内存启动，请选择“内存启动”。');
+		return {url:'/ramboot', options:{method:'POST', headers:{'Content-Type':'application/octet-stream'}, body:fileInput.files[0]}};
+	}
+	return {url:'/', options:{method:'POST', body:new FormData(form)}};
+}
+
 function handleSubmit(e) {
 	e.preventDefault();
 	var form = e.target;
@@ -80,25 +90,34 @@ function handleSubmit(e) {
 		arInput.disabled = false;
 	}
 
-	fetch('/', {
-		method: 'POST',
-		body: new FormData(form)
+	window.memoryBootPending = form.querySelector('input[type=file]').name === 'initramfs';
+	fetch('/about').then(function(resp) {
+		if (!resp.ok) throw new Error('无法读取设备状态，请刷新页面。');
+		return resp.json();
+	}).then(function(info) {
+		var request = makeUploadRequest(form, info.ram_only === true);
+		return fetch(request.url, request.options);
 	}).then(function(resp) {
-		if (!resp.ok) return showFail();
+		if (!resp.ok) return resp.text().then(function(message) {
+			throw new Error(message || ('上传被拒绝，HTTP ' + resp.status));
+		});
 		showStep(1, '校验中...');
 		pollUpgradeStatus();
-	}).catch(function() { showFail(); });
+	}).catch(function(error) { showFail(error.message || '上传中断或设备无响应，请查看终端详情。'); });
 }
 
-function showFail(isTypeMismatch) {
-	document.querySelector('.card').innerHTML='<h2>验证失败</h2><div class="error"><p>'+(isTypeMismatch?'类型不匹配':'大小不匹配')+'</p></div><button onclick="window.open(\'term.html\',\'_blank\')">终端详情</button>';
+function showFail(message) {
+	var card = document.querySelector('.card');
+	card.innerHTML='<h2>操作失败</h2><div class="error"><p></p></div><button onclick="window.open(\'term.html\',\'_blank\')">终端详情</button>';
+	card.querySelector('.error p').textContent = message || '上传中断或设备无响应，请查看终端详情。';
 }
 function pollUpgradeStatus() {
 	var done = 0;
 	function check() {
 		if (done) return;
 		fetch('/upgrade_status').then(function(r) { return r.text(); }).then(function(s) {
-			if (s === 'type_mismatch') { done = 1; return showFail(true); }
+			if (s === 'type_mismatch') { done = 1; return showFail('固件类型或内容校验失败，请查看终端详情。'); }
+			if (s === 'ram_boot_failed') { done = 1; return showFail('内存启动未完成，bootm 已返回；请查看终端详情。'); }
 			if (s === 'rebooting') { done = 1; return pingDevice(); }
 			if (s === 'upgrade_done') {
 				done = 1;
@@ -107,7 +126,7 @@ function pollUpgradeStatus() {
 				el.innerHTML = '<h2>更新完成</h2><p>按需自动或手动重启。</p><button onclick="if(confirm(\'确认重启？\')){fetch(\'/webterm/cmd\',{method:\'POST\',headers:{\'Content-Type\':\'text/plain\'},body:\'reset\'});showStep(3,\'设备重启中...\',3);pingDevice(3)}">手动重启</button>';
 				return;
 			}
-			if (s === 'flashing') { showStep(2, '写入中...'); return setTimeout(check, 1000); }
+			if (s === 'flashing') { showStep(2, window.memoryBootPending ? '内存启动中...' : '写入中...'); return setTimeout(check, 1000); }
 			showStep(1, '校验中...');
 			setTimeout(check, 500);
 		}).catch(function() { setTimeout(check, 2000); });

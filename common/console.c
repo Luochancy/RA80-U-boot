@@ -17,6 +17,7 @@
 #include <exports.h>
 #include <environment.h>
 #include <webterm.h>
+#include <ra80_bootstage.h>
 #ifdef CONFIG_LWIP_HTTPD
 #include "../failsafe/failsafe_httpd.h"
 #endif
@@ -498,8 +499,14 @@ void putc(const char c)
 #endif
 
 #ifdef CONFIG_DISABLE_CONSOLE
-	if (gd->flags & GD_FLG_DISABLE_CONSOLE)
+	if (gd->flags & GD_FLG_DISABLE_CONSOLE) {
+#if defined(CONFIG_LWIP_HTTPD) && defined(CONFIG_IPQ5018_XIAOMI_RA80)
+		/* Keep RAM diagnostics readable without touching the stock UART. */
+		if (ra80_ram_test_active())
+			webterm_putc(c);
+#endif
 		return;
+	}
 #endif
 
 #ifdef CONFIG_LWIP_HTTPD
@@ -549,8 +556,13 @@ void puts(const char *s)
 #endif
 
 #ifdef CONFIG_DISABLE_CONSOLE
-	if (gd->flags & GD_FLG_DISABLE_CONSOLE)
+	if (gd->flags & GD_FLG_DISABLE_CONSOLE) {
+#if defined(CONFIG_LWIP_HTTPD) && defined(CONFIG_IPQ5018_XIAOMI_RA80)
+		if (ra80_ram_test_active())
+			webterm_capture_output(s);
+#endif
 		return;
+	}
 #endif
 
 #ifdef CONFIG_LWIP_HTTPD

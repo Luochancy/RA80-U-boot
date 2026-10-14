@@ -23,6 +23,8 @@
 #include <webterm.h>
 #include <version.h>
 #include <fdtdec.h>
+#include <libfdt.h>
+#include "ra80_ram_upload.h"
 #if defined(CONFIG_IPQ40XX) || defined(CONFIG_IPQ806X)
 #include <miiphy.h>
 #include <linux/mdio.h>
@@ -97,7 +99,10 @@ static struct {
 	int file_too_big;
 	int failed;
 	int done;
+	int ram_raw;
 } upload = { .packet_counter = 255 };
+
+static struct ra80_ram_upload ram_upload;
 
 static struct {
 	u32_t data_size;
@@ -175,12 +180,14 @@ static void httpd_state_reset(struct failsafe_httpd_state *hs) {
 	hs->dataptr = 0;
 	hs->upload = 0;
 	hs->upload_total = 0;
+	hs->ram_reply_pending = 0;
 	if (hs->owns_global) {
 		int done = upload.done, failed = upload.failed;
 		hs->owns_global = 0;
 		hs_global = NULL;
 		tcp_setprio(hs->pcb, TCP_PRIO_MIN);
 		memset(&upload, 0, sizeof(upload));
+		memset(&ram_upload, 0, sizeof(ram_upload));
 		upload.done = done;
 		upload.failed = failed;
 		upload.packet_counter = 255;
@@ -424,6 +431,81 @@ static void httpd_handle_upload_data(struct failsafe_httpd_state *hs, char *data
 	httpd_upload_progress(hs);
 }
 
+static void httpd_ram_upload_reply(struct failsafe_httpd_state *hs, const char *response, int failed)
+{
+	upload.failed = failed;
+	/* Only this connection's fully acknowledged reply may arm RAM boot. */
+	upload.done = 0;
+	if (failed) {
+		printf("RA80 RAM upload rejected: %s\n", response);
+		net_boot_file_size = 0;
+		webfailsafe_ready_for_upgrade = 0;
+	}
+	if (failed)
+		httpd_state_reset(hs);
+	hs->state = STATE_FILE_REQUEST;
+	hs->dataptr = (u8_t *)response;
+	hs->upload = strlen(response);
+	hs->ram_reply_pending = failed ? 0 : hs->upload;
+	httpd_send_data(hs);
+}
+
+static int httpd_ram_reply_acked(struct failsafe_httpd_state *hs, unsigned int len)
+{
+	if (!hs->ram_reply_pending)
+		return 0;
+	if (len < hs->ram_reply_pending) {
+		hs->ram_reply_pending -= len;
+		return 1;
+	}
+	hs->ram_reply_pending = 0;
+	webfailsafe_ready_for_upgrade = 1;
+	return 0;
+}
+
+static void httpd_handle_ram_upload(struct failsafe_httpd_state *hs, const char *data, int len)
+{
+	ulong offset, count, limit = CONFIG_SYS_BOOTM_LEN;
+	u64 ram_end = CONFIG_SYS_SDRAM_END;
+	int ret;
+	if (ram_end <= UPLOAD_ADDR)
+		limit = 0;
+	else if (ram_end - UPLOAD_ADDR < limit)
+		limit = ram_end - UPLOAD_ADDR;
+	if (limit > 0x4a800000UL - RAM_BOOT_ADDR)
+		limit = 0x4a800000UL - RAM_BOOT_ADDR;
+	ret = ra80_ram_upload_feed(&ram_upload, data, len, limit, &offset, &count);
+	if (ret < 0) {
+		const char *response =
+			"HTTP/1.0 400 Bad Request\r\nConnection: close\r\n\r\nInvalid RAM upload request; use the memory boot page.";
+		if (ret == RA80_UPLOAD_SIZE)
+			response = "HTTP/1.0 413 Payload Too Large\r\nConnection: close\r\n\r\nImage exceeds the safe RAM limit or is shorter than a FIT header.";
+		else if (ret == RA80_UPLOAD_LENGTH)
+			response = "HTTP/1.0 411 Length Required\r\nConnection: close\r\n\r\nA single valid Content-Length is required.";
+		else if (ret == RA80_UPLOAD_OVERFLOW)
+			response = "HTTP/1.0 400 Bad Request\r\nConnection: close\r\n\r\nReceived more bytes than Content-Length.";
+		httpd_ram_upload_reply(hs, response, 1);
+		return;
+	}
+	if (count) {
+		memcpy(webfailsafe_data_pointer, data + offset, count);
+		webfailsafe_data_pointer += count;
+	}
+	if (ret != RA80_UPLOAD_DONE)
+		return;
+	if (fdt_check_header((void *)UPLOAD_ADDR) ||
+	    fdt_totalsize((void *)UPLOAD_ADDR) != ram_upload.length ||
+	    fdt_path_offset((void *)UPLOAD_ADDR, "/images") < 0 ||
+	    fdt_path_offset((void *)UPLOAD_ADDR, "/configurations") < 0) {
+		httpd_ram_upload_reply(hs,
+			"HTTP/1.0 422 Unprocessable Content\r\nConnection: close\r\n\r\nInvalid FIT or FIT total size differs from received image size.", 1);
+		return;
+	}
+	net_boot_file_size = ram_upload.length;
+	printf("RA80 RAM upload complete: %lu bytes; FIT size verified\n", net_boot_file_size);
+	httpd_ram_upload_reply(hs, "HTTP/1.0 200 OK\r\nConnection: close\r\n\r\nRAM image received and verified.", 0);
+}
+
 static void str_trim_crlf(char *s) {
 	char *p;
 	if ((p = strchr(s, ' ')))  *p = '\0';
@@ -461,7 +543,7 @@ static void httpd_send_static(struct failsafe_httpd_state *hs, const char *data,
 }
 
 static void httpd_handle_upgrade_status(struct failsafe_httpd_state *hs) {
-	static const char *status_text[] = {"idle", "verifying", "flashing", "type_mismatch", "rebooting", "upgrade_done"};
+	static const char *status_text[] = {"idle", "verifying", "flashing", "type_mismatch", "rebooting", "upgrade_done", "ram_boot_failed"};
 	static char resp[128];
 	int len = sprintf(resp, "HTTP/1.0 200 OK\r\nCache-Control: no-cache\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n%s", status_text[upgrade_status]);
 	httpd_send_static(hs, resp, len);
@@ -697,6 +779,7 @@ static void httpd_handle_about(struct failsafe_httpd_state *hs) {
 	pos += sprintf(about_json_buf + pos, "{\"version\":\"%s\",", version_string);
 	pos += sprintf(about_json_buf + pos, "\"machid\":\"0x%lx\",", gd->bd->bi_arch_number);
 	pos += sprintf(about_json_buf + pos, "\"ram_size\":%lu,", (ulong)gd->ram_size);
+	pos += sprintf(about_json_buf + pos, "\"ram_only\":%s,", ra80_ram_test_active() ? "true" : "false");
 
 	{
 		const char *fdt_model = fdt_getprop(gd->fdt_blob, 0, "model", NULL);
@@ -1497,6 +1580,8 @@ static err_t httpd_sent(void *arg, struct tcp_pcb *pcb, u16_t len) {
 
 	if (hs == NULL)
 		return ERR_OK;
+	if (httpd_ram_reply_acked(hs, len))
+		return ERR_OK;
 
 	hs->last_activity = (u32_t)get_timer(0);
 
@@ -1605,6 +1690,26 @@ static err_t httpd_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t er
 				webterm_http_handler(hs, data, data_len);
 				break;
 			}
+			if (ra80_ram_test_active()) {
+				if (hs_global && hs_global != hs) {
+					static const char busy[] = "HTTP/1.0 409 Conflict\r\nConnection: close\r\n\r\nAn upload is already active.";
+					httpd_send_static(hs, busy, sizeof(busy) - 1);
+					break;
+				}
+				hs->state = STATE_UPLOAD_REQUEST;
+				hs->owns_global = 1;
+				hs_global = hs;
+				memset(&upload, 0, sizeof(upload));
+				memset(&ram_upload, 0, sizeof(ram_upload));
+				upload.ram_raw = 1;
+				webfailsafe_upgrade_type = WEBFAILSAFE_UPGRADE_TYPE_INITRAMFS;
+				webfailsafe_auto_reboot_enabled = 0;
+				webfailsafe_backup_avail_enabled = 0;
+				upgrade_status = 1;
+				webfailsafe_data_pointer = (u8_t *)UPLOAD_ADDR;
+				httpd_handle_ram_upload(hs, data, data_len);
+				break;
+			}
 			if (strncmp(&data[5], "/env_set", 8) == 0) {
 				httpd_handle_env_set(hs, data, data_len);
 				break;
@@ -1637,6 +1742,10 @@ static err_t httpd_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t er
 		break;
 
 	case STATE_UPLOAD_REQUEST:
+		if (upload.ram_raw && hs->owns_global) {
+			httpd_handle_ram_upload(hs, data, data_len);
+			break;
+		}
 		if (!upload.data_start_found) {
 			data[data_len] = '\0';
 			if (!httpd_findandstore_firstchunk(hs, data, data_len)) {
@@ -1832,7 +1941,7 @@ void failsafe_httpd_poll(void) {
 
 		if (do_http_upgrade(net_boot_file_size, webfailsafe_upgrade_type) < 0) {
 			do_http_progress(WEBFAILSAFE_PROGRESS_UPGRADE_FAILED);
-			upgrade_status = 3;
+			upgrade_status = ra80_ram_test_active() ? 6 : 3;
 			httpd_poll_wait(2000);
 			return;
 		}
